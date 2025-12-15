@@ -3,7 +3,7 @@ from tkinter import ttk
 
 root = tk.Tk()
 root.title("Đồ thị")
-root.geometry("1000x700")  # Kích thước tương tự hình bạn gửi
+root.geometry("1000x700")  
 
 # Khung chọn loại đồ thị
 frame_graph_type = tk.LabelFrame(root, text="Loại đồ thị", bg="cyan")
