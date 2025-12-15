@@ -3,11 +3,8 @@ from tkinter import ttk
 
 root = tk.Tk()
 root.title("Đồ thị")
-<<<<<<< HEAD
 root.geometry("1000x700")
-=======
-root.geometry("1000x700")  
->>>>>>> 25b68b2d9dc30e768a9d0ea6f7289157408ff42c
+
 
 # Khung chọn loại đồ thị
 frame_graph_type = tk.LabelFrame(root, text="Loại đồ thị", bg="cyan")
