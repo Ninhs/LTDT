@@ -16,15 +16,16 @@ class Graph: # Lớp lưu tạm thời đồ thị
     def __init__(self, directed=False):
         self.directed = directed
         self.vertices = {}
-        self.edges = []
+        self.edges = {}
 
     # Thêm đỉnh
     def add_vertex(self, vid, x, y):
         self.vertices[vid] = Vertex(vid, x, y)
 
     # Thêm cạnh
-    def add_edge(self, u, v, weight=1):
-        self.edges.append(Edge(u, v, weight, self.directed))
+    def add_edge(self, src, dst, weight=1):
+        key = tuple(sorted([src, dst]))
+        self.edges[key] = weight
 
     # Ma trận kề
     def adjacency_matrix(self):

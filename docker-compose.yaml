@@ -1,0 +1,56 @@
+version: "3.8"
+
+networks:
+  nebula-net:
+    driver: bridge
+
+services:
+  metad:
+    image: vesoft/nebula-metad:v3.6.0
+    container_name: nebula-metad
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-metad
+    ports:
+      - "9559:9559"
+    networks:
+      - nebula-net
+    volumes:
+      - Graph:/usr/local/nebula/data/meta
+    restart: always
+
+  storaged:
+    image: vesoft/nebula-storaged:v3.6.0
+    container_name: nebula-storaged
+    depends_on:
+      - metad
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-storaged
+    ports:
+      - "9779:9779"
+    networks:
+      - nebula-net
+    volumes:
+      - Graph:/usr/local/nebula/data/storage
+    restart: always
+
+  graphd:
+    image: vesoft/nebula-graphd:v3.6.0
+    container_name: nebula-graphd
+    depends_on:
+      - metad
+      - storaged
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-graphd
+      - --port=9669
+    ports:
+      - "9669:9669"
+    networks:
+      - nebula-net
+    restart: always
+
+volumes:
+  Graph:
+    external: true
