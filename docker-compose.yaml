@@ -26,7 +26,8 @@ services:
       - metad
     command:
       - --meta_server_addrs=nebula-metad:9559
-      - --local_ip=nebula-storaged
+      - --local_ip=127.0.0.1
+      - --port=9779
     ports:
       - "9779:9779"
     networks:
@@ -43,7 +44,7 @@ services:
       - storaged
     command:
       - --meta_server_addrs=nebula-metad:9559
-      - --local_ip=nebula-graphd
+      - --local_ip=127.0.0.1
       - --port=9669
     ports:
       - "9669:9669"
@@ -54,3 +55,5 @@ services:
 volumes:
   Graph:
     external: true
+
+#  docker run -it --rm --network project_nebula-net vesoft/nebula-console:v3.6.0 -u root -p nebula -addr nebula-graphd -port 9669

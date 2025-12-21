@@ -1,9 +1,9 @@
-from graph_model import Graph
+from graph_model import Graph, Algorithm
 from database import NebulaDB
 
 class GraphController:
     def __init__(self, canvas, graph_type_var, text_result, text_matrix,
-                 entry_src, entry_dst, entry_weight, btn_add_edge):  # Thêm các Entry + Button
+                 entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, start_vertex_cb, end_vertex_cb):  # Thêm các Entry + Button
         self.canvas = canvas
         self.graph_type_var = graph_type_var
         self.text_result = text_result
@@ -13,6 +13,9 @@ class GraphController:
         self.entry_dst = entry_dst      # Entry đỉnh cuối
         self.entry_weight = entry_weight  # Entry trọng số
         self.btn_add_edge = btn_add_edge
+        self.algo_var = algo_var
+        self.start_vertex_cb = start_vertex_cb
+        self.end_vertex_cb = end_vertex_cb
 
         self.graph = Graph()
         self.vertex_count = 0
@@ -45,7 +48,7 @@ class GraphController:
 
         # Thông báo
         self.text_result.insert("end", f"Đã thêm đỉnh {vid} tại vị trí ({event.x}, {event.y})\n")
-        self.text_result.see("end")  # Cuộn xuống cuối
+        self.text_result.see("end")
 
     def draw_vertex(self, vid):
         """Vẽ đỉnh lên canvas"""
@@ -164,3 +167,175 @@ class GraphController:
 
     def show_matrix(self):
         pass
+
+    # run thuật toán
+    def run_algorithm(self):
+        algo = self.algo_var.get()
+        if algo == "Kruskal":
+            self.run_kruskal()
+        elif algo == "Sequential Color":
+            self.run_sequential_color()
+        elif algo == "BFS":
+            self.run_bfs()
+        elif algo == "DFS":
+            self.run_dfs()
+        elif algo == "Bellman-Ford":
+            self.run_bellman_ford()
+        else:
+            self.text_result.insert("end", f"Thuật toán {algo} chưa hỗ trợ\n")
+
+    # chạy BFS
+    def run_bfs(self):
+        start = self.start_vertex_cb.get()
+        end = self.end_vertex_cb.get()
+
+        if start not in self.graph.vertices or end not in self.graph.vertices:
+            self.text_result.insert("end", "Đỉnh bắt đầu hoặc đỉnh đích không hợp lệ\n")
+            return
+
+        algo = Algorithm(directed=self.graph.directed)
+        algo.vertices = self.graph.vertices
+        algo.edges = self.graph.edges
+
+        path = algo.bfs(start, end)
+
+        if not path:
+            self.text_result.insert("end", "Không tìm được đường đi bằng BFS\n")
+            return
+
+        total_weight = 0
+        for i in range(len(path) - 1):
+            u = path[i]
+            v = path[i + 1]
+
+            if (u, v) in self.graph.edges:
+                total_weight += self.graph.edges[(u, v)]
+            elif not self.graph.directed and (v, u) in self.graph.edges:
+                total_weight += self.graph.edges[(v, u)]
+            else:
+                self.text_result.insert("end", f"Không tìm thấy cạnh {u} -> {v}\n")
+                return
+
+        self.text_result.delete("1.0", "end")
+        self.text_result.insert("end", "BFS path: " + " → ".join(path) + "\n")
+        self.text_result.insert("end", f"Tổng trọng số: {total_weight}\n")
+
+    # chạy Sequential Coloring
+    def run_sequential_color(self):
+        self.text_result.delete("1.0", "end")
+
+        algo = Algorithm(directed=(self.graph_type_var.get() == "co_huong"))
+        algo.vertices = self.graph.vertices
+        algo.edges = self.graph.edges
+        colors = algo.sequential_coloring()
+
+        self.text_result.insert("end", " Sequential Coloring:\n")
+        for v, c in colors.items():
+            self.text_result.insert("end", f"Đỉnh {v} → Màu {c}\n")
+
+    # chạy Kruskal
+    def run_kruskal(self):
+        self.text_result.delete("1.0", "end")
+
+        algo = Algorithm(directed=(self.graph_type_var.get() == "co_huong"))
+        algo.vertices = self.graph.vertices
+        algo.edges = self.graph.edges
+        try:
+            mst, total_weight = algo.kruskal()
+        except Exception as e:
+            self.text_result.insert("end", f"Lỗi Kruskal: {e}\n")
+            return
+
+        self.text_result.insert("end", " Kruskal - Cây khung nhỏ nhất\n")
+        for u, v, w in mst:
+            self.text_result.insert("end", f"{u} - {v} : {w}\n")
+        self.text_result.insert("end", f"\nTổng trọng số = {total_weight}\n")
+
+    # chạy DFS
+    def run_dfs(self):
+        start = self.start_vertex_cb.get()
+        end = self.end_vertex_cb.get()
+
+        if start not in self.graph.vertices or end not in self.graph.vertices:
+            self.text_result.insert("end", "Đỉnh không hợp lệ\n")
+            return
+
+        stack = [start]
+        visited = set()
+        parent = {start: None}
+
+        while stack:
+            u = stack.pop()
+            if u == end:
+                break
+
+            if u in visited:
+                continue
+            visited.add(u)
+
+            for (x, y), w in self.graph.edges.items():
+                if x == u:
+                    v = y
+                elif not self.graph.directed and y == u:
+                    v = x
+                else:
+                    continue
+
+                if v not in visited:
+                    parent[v] = u
+                    stack.append(v)
+
+        if end not in parent:
+            self.text_result.insert("end", "Không tìm được đường đi\n")
+            return
+
+        # truy vết đường đi
+        path = []
+        cur = end
+        while cur:
+            path.append(cur)
+            cur = parent[cur]
+        path.reverse()
+
+        # tính trọng số
+        total_weight = 0
+        for i in range(len(path) - 1):
+            key = tuple(sorted([path[i], path[i + 1]]))
+            total_weight += self.graph.edges[key]
+
+        self.text_result.delete("1.0", "end")
+        self.text_result.insert(
+            "end",
+            f"DFS path: {' → '.join(path)}\nTổng trọng số: {total_weight}\n"
+        )
+
+    # duyệt bellman
+    def run_bellman_ford(self):
+        start = self.start_vertex_cb.get()
+        if start not in self.graph.vertices:
+            self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
+            return
+
+        # Tạo danh sách cạnh dạng (u, v, w), hỗ trợ vô hướng
+        edges_list = []
+        for (u, v), w in self.graph.edges.items():
+            edges_list.append((u, v, w))
+            if not self.graph.directed:  # Nếu vô hướng
+                edges_list.append((v, u, w))
+
+        vertices_list = list(self.graph.vertices.keys())
+
+        # Tạo instance Algorithm và gán edges
+        algorithm = Algorithm()
+        algorithm.edges = edges_list  # Gán danh sách cạnh vào instance
+
+        distances = algorithm.bellman_ford(vertices_list, start)
+
+        self.text_result.delete("1.0", "end")
+        if distances is None:
+            self.text_result.insert("end", "Đồ thị chứa chu trình âm!\n")
+        else:
+            self.text_result.insert("end", f"Bellman-Ford từ đỉnh {start}:\n")
+            for v, d in distances.items():
+                dist_str = "∞" if d == float('inf') else str(d)
+                self.text_result.insert("end", f"Đỉnh {v}: {dist_str}\n")

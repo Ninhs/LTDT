@@ -21,11 +21,11 @@ frame_vertices = tk.LabelFrame(root, text="Đỉnh", bg="cyan")
 frame_vertices.place(x=220, y=10, width=396, height=80)
 
 tk.Label(frame_vertices, text="Đỉnh đầu:", bg="cyan").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-start_vertex = ttk.Combobox(frame_vertices, values=["1","2","3","4","5"])
+start_vertex = ttk.Combobox(frame_vertices)
 start_vertex.grid(row=1, column=0, padx=5, pady=5)
 
 tk.Label(frame_vertices, text="Đỉnh đích:", bg="cyan").grid(row=0, column=1, sticky="w", padx=5, pady=5)
-end_vertex = ttk.Combobox(frame_vertices, values=["1","2","3","4","5"])
+end_vertex = ttk.Combobox(frame_vertices)
 end_vertex.grid(row=1, column=1, padx=5, pady=5)
 
 tk.Button(frame_vertices, text="Tìm đường đi").grid(row=1, column=2, padx=1, pady=1)
@@ -39,9 +39,9 @@ frame_right = tk.Frame(root, bg="cyan")
 frame_right.place(x=617, y=10, width=375, height=80)
 
 frame_traverse = tk.LabelFrame(frame_right, text="Duyệt đồ thị", bg="cyan")
-frame_traverse.pack(fill="x", padx=5, pady=5, ipady=10, ipadx=10)
+frame_traverse.pack(fill="x", padx=1, pady=1, ipady=5, ipadx=5)
 
-tk.Label(frame_traverse, text="Loại thuật toán:", bg="cyan").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+tk.Label(frame_traverse, text="Loại thuật toán:", bg="cyan").grid(row=0, column=0, padx=1, pady=1, sticky="w")
 cb_start = ttk.Combobox(frame_traverse,
                         values=["DFS", "BFS", "Bellman-Ford", "Dijkstra", "Prim", "Kruskal", "Sequential Color"],
                         state="readonly",
@@ -49,8 +49,11 @@ cb_start = ttk.Combobox(frame_traverse,
 cb_start.current(0)
 cb_start.grid(row=0, column=1, padx=5, pady=5)
 
-btn_right = tk.Button(frame_traverse, text="Duyệt", width=10)
-btn_right.grid(row=0, column=2, padx=5, pady=5)
+tk.Label(frame_traverse, text="Đỉnh bắt đầu:", bg="cyan").grid(row=1, column=0, padx=1, pady=1, sticky="w")
+tk.Entry(frame_traverse).grid(row=1, column=1, padx=1, pady=1)
+btn_right = tk.Button(frame_traverse, text="Duyệt", width=10, height=1)
+btn_right.grid(row=1, column=2, padx=30, pady=1)
+
 
 # Hiển thị kết quả và ma trận
 frame_display = ttk.LabelFrame(root, text="Hiển thị")
@@ -94,7 +97,12 @@ entry_weight.grid(row=2, column=1, sticky='ew', padx=(0, 10), pady=8)
 # Nút Thêm cạnh
 btn_add_edge = tk.Button(frame_add, text="Thêm cạnh", width=25, bg="lightgreen")
 btn_add_edge.grid(row=3, column=0, columnspan=3,sticky="we", padx=5, pady=25, ipady=10)
-
+tk.Button(frame_add, text="Mở data", bg="yellow").grid(row=4, column=0, columnspan=3, sticky="we", padx=5, pady=5, ipady=10)
+btn_add_vertex = tk.Button(frame_add, text="Thêm đỉnh")
+btn_add_vertex.grid(row=5, column=0, columnspan=3, sticky="we", padx=5, pady=5, ipady=10)
+tk.Button(frame_add, text="Cập nhật", padx=20, pady=8).grid(row=6, column=0, padx=(0,5), sticky="we")
+tk.Button(frame_add, text="Di chuyển", padx=20, pady=8).grid(row=6, column=1, padx=(0, 5), sticky="we")
+tk.Button(frame_add, text="Làm mới", padx=20, pady=8).grid(row=6, column=2, sticky="we")
 
 controller = GraphController(
     canvas=canvas,
@@ -104,16 +112,17 @@ controller = GraphController(
     entry_src=entry_src,
     entry_dst=entry_dst,
     entry_weight=entry_weight,
-    btn_add_edge=btn_add_edge
+    btn_add_edge=btn_add_edge,
+    algo_var=cb_start,
+    start_vertex_cb=start_vertex,
+    end_vertex_cb=end_vertex
 )
 
 # Bind nút "Thêm cạnh" để gọi hàm add_edge trong controller
 btn_add_edge.config(command=controller.add_edge)
+btn_right.config(command=controller.run_algorithm)
+btn_add_vertex.config(command=controller.enable_add_vertex)
 
-tk.Button(frame_add, text="Thêm đỉnh", command=controller.enable_add_vertex).grid(row=4, column=0, columnspan=3, sticky="we", padx=5, pady=35, ipady=10)
-tk.Button(frame_add, text="Cập nhật", padx=20, pady=8).grid(row=5, column=0, padx=(0,5), sticky="we")
-tk.Button(frame_add, text="Di chuyển", padx=20, pady=8).grid(row=5, column=1, padx=(0, 5), sticky="we")
-tk.Button(frame_add, text="Làm mới", padx=20, pady=8).grid(row=5, column=2, sticky="we")
 
 frame_add.columnconfigure(0, weight=1, uniform="group")
 frame_add.columnconfigure(1, weight=1, uniform="group")
