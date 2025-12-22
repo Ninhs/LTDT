@@ -1,10 +1,11 @@
 from graph_model import Graph, Algorithm
 from database import NebulaDB
+import random
 
 class GraphController:
     def __init__(self, canvas, graph_type_var, text_result, text_matrix,
-                 entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, entry_start, end_vertex_cb,
-                 btn_update, btn_move, btn_clear,
+                 entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, entry_start,start_vertex_cb, end_vertex_cb,
+                 btn_find_path, btn_update, btn_move, btn_clear,
                  space_cb, btn_load_db):  # Thêm các Entry + Button
         self.canvas = canvas
         self.graph_type_var = graph_type_var
@@ -16,12 +17,13 @@ class GraphController:
         self.entry_weight = entry_weight  # Entry trọng số
         self.btn_add_edge = btn_add_edge # Button thêm cạnh
         self.algo_var = algo_var        # Biến duyệt đồ thị
-        self.entry_start = entry_start  # Entry
+        self.entry_start = entry_start
+        self.start_vertex_cb = start_vertex_cb  # Entry
         self.end_vertex_cb = end_vertex_cb
         self.btn_update = btn_update
         self.btn_move = btn_move
         self.btn_clear = btn_clear
-
+        self.btn_find_path = btn_find_path
 
         self.move_mode = False
         self.selected_vertex = None  # Đỉnh đang được kéo
@@ -53,8 +55,9 @@ class GraphController:
         self.btn_add_edge.config(command=self.add_edge)
 
     def enable_add_vertex(self):
+        self.clear_result()
         self.add_vertex_mode = not self.add_vertex_mode
-        self.add_edge_mode = False  # Tắt mode cạnh nếu đang bật
+        self.add_edge_mode = False
 
         if self.add_vertex_mode:
             self.text_result.insert("end", "Chế độ thêm đỉnh: click canvas để thêm đỉnh\n")
@@ -81,15 +84,15 @@ class GraphController:
         v = self.graph.vertices[vid]
         r = 20
 
-        # Thêm tags=(vid,) cho cả oval và text
         self.canvas.create_oval(v.x - r, v.y - r, v.x + r, v.y + r,
                                 fill="lightblue", outline="blue", width=2,
-                                tags=(vid,))  # <--- Thêm tags
+                                tags=(vid,))
 
         self.canvas.create_text(v.x, v.y, text=vid, font=("Arial", 12, "bold"),
-                                tags=(vid,))  # <--- Thêm tags
+                                tags=(vid,))
 
     def enable_add_edge(self):
+        self.clear_result()
         self.add_edge_mode = not self.add_edge_mode
         self.add_vertex_mode = False
 
@@ -100,6 +103,7 @@ class GraphController:
             self.text_result.insert("end", "Đã tắt chế độ thêm cạnh\n")
 
     def add_edge(self):
+        self.clear_result()
         src = self.entry_src.get().strip()
         dst = self.entry_dst.get().strip()
 
@@ -188,7 +192,7 @@ class GraphController:
         self.entry_dst.delete(0, "end")
         self.entry_weight.delete(0, "end")
 
-    # Sửa on_canvas_click để không thêm đỉnh khi đang ở mode cạnh
+    # không thêm đỉnh khi đang ở mode cạnh
     def on_canvas_click(self, event):
         if self.move_mode:
             items = self.canvas.find_overlapping(event.x - 20, event.y - 20, event.x + 20, event.y + 20)
@@ -199,7 +203,7 @@ class GraphController:
                     return
 
     def update_graph(self):
-        """Cập nhật đồ thị: xóa/sửa cạnh hoặc xóa đỉnh"""
+        self.clear_result()
         src = self.entry_src.get().strip()
         dst = self.entry_dst.get().strip()
         weight_str = self.entry_weight.get().strip()
@@ -250,7 +254,7 @@ class GraphController:
         self.entry_weight.delete(0, "end")
 
     def enable_move_mode(self):
-        """Bật/tắt chế độ di chuyển đỉnh"""
+        self.clear_result()
         self.move_mode = not self.move_mode
         if self.move_mode:
             self.text_result.insert("end", "Chế độ di chuyển: click và kéo đỉnh để di chuyển\n")
@@ -293,7 +297,8 @@ class GraphController:
             self.selected_vertex = None
 
     def clear_canvas(self):
-        """Làm mới: xóa hết đỉnh và cạnh trên canvas"""
+        self.clear_result()
+        self.clear_result()
         self.canvas.delete("all")
         self.graph = Graph()
         self.vertex_count = 0
@@ -301,7 +306,6 @@ class GraphController:
         self.show_matrix()
 
     def redraw_all(self):
-        """Vẽ lại toàn bộ đồ thị (dùng khi xóa hoặc di chuyển)"""
         self.canvas.delete("all")
         for vid in self.graph.vertices:
             self.draw_vertex(vid)
@@ -349,6 +353,7 @@ class GraphController:
 
     # chạy DFS
     def run_dfs(self):
+        self.clear_result()
         start = self.entry_start.get()
         if start not in self.graph.vertices:
             self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
@@ -378,6 +383,7 @@ class GraphController:
             self.text_result.insert("end", f"Đỉnh {v}: {dist_str}\n")
     # chạy BFS
     def run_bfs(self):
+        self.clear_result()
         start = self.entry_start.get()
         if start not in self.graph.vertices:
             self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
@@ -400,6 +406,7 @@ class GraphController:
 
     # duyệt bellman
     def run_bellman_ford(self):
+        self.clear_result()
         start = self.entry_start.get()
         if start not in self.graph.vertices:
             self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
@@ -432,11 +439,12 @@ class GraphController:
     # duyệt dijkstra
     def run_dijkstra(self):
         start = self.entry_start.get().strip()
+
         if not start:
             self.text_result.insert("end", "Vui lòng nhập đỉnh bắt đầu!\n")
             return
         if start not in self.graph.vertices:
-            self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
+            self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ!\n")
             return
 
         algo = Algorithm()
@@ -444,12 +452,13 @@ class GraphController:
         algo.directed = self.graph.directed
         algo.vertices = self.graph.vertices.keys()
 
-        # Gọi Dijkstra từ start đến tất cả các đỉnh
-        distances = algo.dijkstra_all(start)  # <--- Sửa hàm dijkstra thành dijkstra_all
+        # Gọi Dijkstra chỉ từ start đến tất cả các đỉnh (không cần end)
+        distances = algo.dijkstra(start)  # Hàm dijkstra trong Algorithm phải trả dict distances
 
         self.text_result.delete("1.0", "end")
-        self.text_result.insert("end", f"Đường đi ngắn nhất Dijkstra từ đỉnh {start} đến tất cả các đỉnh:\n\n")
+        self.text_result.insert("end", f"Thuật toán Dijkstra từ đỉnh {start} đến tất cả các đỉnh:\n\n")
 
+        # Sắp xếp đỉnh theo thứ tự (để đẹp)
         for v in sorted(distances.keys()):
             d = distances[v]
             if d == float('inf'):
@@ -459,6 +468,7 @@ class GraphController:
 
     # duyệt prim
     def run_prim(self):
+        self.clear_result()
         start = self.entry_start.get().strip()
         if not start:
             self.text_result.insert("end", "Vui lòng nhập đỉnh bắt đầu!\n")
@@ -496,6 +506,7 @@ class GraphController:
 
     # chạy Kruskal
     def run_kruskal(self):
+        self.clear_result()
         self.text_result.delete("1.0", "end")
 
         algo = Algorithm(directed=(self.graph_type_var.get() == "co_huong"))
@@ -514,6 +525,7 @@ class GraphController:
 
     # chạy Sequential Coloring
     def run_sequential_color(self):
+        self.clear_result()
         self.text_result.delete("1.0", "end")
 
         algo = Algorithm(directed=(self.graph_type_var.get() == "co_huong"))
@@ -524,6 +536,33 @@ class GraphController:
         self.text_result.insert("end", " Sequential Coloring:\n")
         for v, c in colors.items():
             self.text_result.insert("end", f"Đỉnh {v} → Màu {c}\n")
+
+    def run_find_path(self):
+        self.clear_result()
+        start = self.start_vertex_cb.get().strip()
+        end = self.end_vertex_cb.get().strip()
+
+        if not start or not end:
+            self.text_result.insert("end", "Vui lòng nhập cả đỉnh đầu và đỉnh đích!\n")
+            return
+        if start not in self.graph.vertices or end not in self.graph.vertices:
+            self.text_result.insert("end", "Đỉnh không hợp lệ\n")
+            return
+
+        algo = Algorithm()
+        algo.edges = self.graph.edges
+        algo.directed = self.graph.directed
+        algo.vertices = self.graph.vertices.keys()
+
+        path, total_weight = algo.dijkstra(start, end)  # hoặc bellman_ford nếu cần
+
+        self.text_result.delete("1.0", "end")
+        if path is None:
+            self.text_result.insert("end", f"Không có đường đi từ {start} đến {end}\n")
+        else:
+            self.text_result.insert("end", f"Đường đi ngắn nhất từ {start} đến {end}:\n")
+            self.text_result.insert("end", " → ".join(path) + "\n")
+            self.text_result.insert("end", f"Tổng trọng số: {total_weight}\n")
 
     def refresh_space_list(self):
         session = NebulaDB.get_session()
@@ -589,7 +628,7 @@ class GraphController:
                 edges_data.append((src, dst, weight))
 
             # Vị trí đỉnh: ưu tiên tọa độ lưu trong DB, nếu không có thì random
-            import random
+
             w = self.canvas.winfo_width() or 800
             h = self.canvas.winfo_height() or 600
 
@@ -646,3 +685,6 @@ class GraphController:
         except Exception as e:
             self.text_result.insert("end", f"Lỗi load từ NebulaGraph: {str(e)}\n")
             self.text_result.see("end")
+
+    def clear_result(self):
+        self.text_result.delete("1.0", "end")

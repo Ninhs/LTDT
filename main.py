@@ -21,14 +21,15 @@ frame_vertices = tk.LabelFrame(root, text="Đỉnh", bg="cyan")
 frame_vertices.place(x=220, y=10, width=396, height=80)
 
 tk.Label(frame_vertices, text="Đỉnh đầu:", bg="cyan").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-start_vertex = ttk.Combobox(frame_vertices)
-start_vertex.grid(row=1, column=0, padx=5, pady=5)
+start_vertex_cb = ttk.Combobox(frame_vertices)
+start_vertex_cb.grid(row=1, column=0, padx=5, pady=5)
 
 tk.Label(frame_vertices, text="Đỉnh đích:", bg="cyan").grid(row=0, column=1, sticky="w", padx=5, pady=5)
-end_vertex = ttk.Combobox(frame_vertices)
-end_vertex.grid(row=1, column=1, padx=5, pady=5)
+end_vertex_cb = ttk.Combobox(frame_vertices)
+end_vertex_cb.grid(row=1, column=1, padx=5, pady=5)
 
-tk.Button(frame_vertices, text="Tìm đường đi").grid(row=1, column=2, padx=1, pady=1)
+btn_find_path = tk.Button(frame_vertices, text="Tìm đường đi", bg="orange")
+btn_find_path.grid(row=1, column=2, padx=1, pady=1)
 
 # Canvas vẽ đồ thị
 canvas = tk.Canvas(root, bg="white", width=678, height=400)
@@ -132,7 +133,9 @@ controller = GraphController(
     btn_update=btn_update,
     btn_move=btn_move,
     btn_clear=btn_clear,
-    end_vertex_cb=end_vertex
+    start_vertex_cb=start_vertex_cb,
+    end_vertex_cb=end_vertex_cb,
+    btn_find_path=btn_find_path
 )
 
 # thực hiện các chức năng từ controller
@@ -143,6 +146,7 @@ btn_load_db.config(command=controller.load_from_db)
 btn_update.config(command=controller.update_graph)
 btn_move.config(command=controller.enable_move_mode)
 btn_clear.config(command=controller.clear_canvas)
+btn_find_path.config(command=controller.run_find_path)
 
 
 frame_add.columnconfigure(0, weight=1, uniform="group")

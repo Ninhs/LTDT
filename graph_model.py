@@ -45,7 +45,6 @@ class Graph: # Lớp lưu tạm thời đồ thị
 
         return keys, matrix
 
-
 class Algorithm:
     def __init__(self, directed=False):
         self.directed = directed
@@ -65,11 +64,6 @@ class Algorithm:
 
     # thuật toán bfs
     def bfs(self, start):
-        """
-        Duyệt BFS từ start, trả về:
-        - predecessor: dict {đỉnh: cha của nó trong cây BFS}
-        - distances: dict {đỉnh: tổng trọng số từ start đến đỉnh đó}
-        """
         if start not in self.vertices:
             return {}, {}
 
@@ -166,11 +160,6 @@ class Algorithm:
 
     # duyệt dfs
     def dfs(self, start):
-        """
-        Duyệt DFS từ start, trả về:
-        - predecessor: dict {đỉnh: cha của nó trong cây DFS}
-        - distances: dict {đỉnh: tổng trọng số từ start đến đỉnh đó theo đường DFS}
-        """
         if start not in self.vertices:
             return {}, {}
 
@@ -219,11 +208,7 @@ class Algorithm:
         return distance
 
     #thuật toán dijkistra
-    def dijkstra_all(self, start):
-        """
-        Dijkstra từ start đến tất cả các đỉnh khác.
-        Trả về dict {đỉnh: khoảng cách ngắn nhất}
-        """
+    def dijkstra(self, start):
         if start not in self.vertices:
             return {}
 
