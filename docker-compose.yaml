@@ -10,20 +10,26 @@ services:
     container_name: nebula-metad
     command:
       - --meta_server_addrs=nebula-metad:9559
-      - --local_ip=nebula-metad
+      - --local_ip=127.0.0.1
     ports:
       - "9559:9559"
     networks:
       - nebula-net
     volumes:
       - Graph:/usr/local/nebula/data/meta
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9559/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: always
 
   storaged:
     image: vesoft/nebula-storaged:v3.6.0
     container_name: nebula-storaged
     depends_on:
-      - metad
+      metad:
+        condition: service_healthy
     command:
       - --meta_server_addrs=nebula-metad:9559
       - --local_ip=127.0.0.1
@@ -34,14 +40,21 @@ services:
       - nebula-net
     volumes:
       - Graph:/usr/local/nebula/data/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9779/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: always
 
   graphd:
     image: vesoft/nebula-graphd:v3.6.0
     container_name: nebula-graphd
     depends_on:
-      - metad
-      - storaged
+      metad:
+        condition: service_healthy
+      storaged:
+        condition: service_healthy
     command:
       - --meta_server_addrs=nebula-metad:9559
       - --local_ip=127.0.0.1
@@ -55,5 +68,3 @@ services:
 volumes:
   Graph:
     external: true
-
-#  docker run -it --rm --network project_nebula-net vesoft/nebula-console:v3.6.0 -u root -p nebula -addr nebula-graphd -port 9669

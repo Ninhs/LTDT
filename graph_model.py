@@ -1,4 +1,5 @@
 from collections import deque
+import heapq
 
 class Vertex: # Lớp đỉnh
     def __init__(self, vid, x, y):
@@ -63,34 +64,39 @@ class Algorithm:
                 self.edges[key] = w
 
     # thuật toán bfs
-    def bfs(self, start, end):
+    def bfs(self, start):
+        """
+        Duyệt BFS từ start, trả về:
+        - predecessor: dict {đỉnh: cha của nó trong cây BFS}
+        - distances: dict {đỉnh: tổng trọng số từ start đến đỉnh đó}
+        """
+        if start not in self.vertices:
+            return {}, {}
 
-        if start == end:
-            return [start]
-
-        queue = deque([[start]])
+        predecessor = {start: None}
+        distances = {start: 0}
+        queue = deque([start])
         visited = set([start])
 
         while queue:
-            path = queue.popleft()
-            current = path[-1]
+            current = queue.popleft()
 
-            # Duyệt các đỉnh kề từ current
-            for (u, v), _ in self.edges.items():  # Nếu self.edges là dict {(u,v): w}
-                if u == current and v not in visited:
-                    new_path = path + [v]
-                    if v == end:
-                        return new_path  # Tìm thấy đường đi
-                    visited.add(v)
-                    queue.append(new_path)
-                elif not self.directed and v == current and u not in visited:
-                    new_path = path + [u]
-                    if u == end:
-                        return new_path
-                    visited.add(u)
-                    queue.append(new_path)
+            # Duyệt các đỉnh kề
+            for (u, v), w in self.edges.items():
+                neighbor = None
+                weight = w
+                if u == current:
+                    neighbor = v
+                elif not self.directed and v == current:
+                    neighbor = u
 
-        return None  # Không có đường đi
+                if neighbor and neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+                    predecessor[neighbor] = current
+                    distances[neighbor] = distances[current] + weight
+
+        return predecessor, distances
 
     # thuật toán kruskal
     def kruskal(self):
@@ -160,26 +166,41 @@ class Algorithm:
 
     # duyệt dfs
     def dfs(self, start):
+        """
+        Duyệt DFS từ start, trả về:
+        - predecessor: dict {đỉnh: cha của nó trong cây DFS}
+        - distances: dict {đỉnh: tổng trọng số từ start đến đỉnh đó theo đường DFS}
+        """
+        if start not in self.vertices:
+            return {}, {}
+
         visited = set()
         stack = [start]
-        dfs_order = []
+        predecessor = {start: None}
+        distances = {start: 0}
 
         while stack:
             u = stack.pop()
+
             if u in visited:
                 continue
+
             visited.add(u)
-            dfs_order.append(u)
-            # duyệt các đỉnh kề
+
             neighbors = []
-            for (x, y) in self.edges:
-                if x == u:
-                    neighbors.append(y)
-                elif not self.directed and y == u:
-                    neighbors.append(x)
-            # thêm vào stack theo thứ tự đảo ngược để duyệt đúng thứ tự
-            stack.extend(reversed(neighbors))
-        return dfs_order
+            for (x, y), w in self.edges.items():
+                if x == u and y not in visited:
+                    neighbors.append((y, w))
+                elif not self.directed and y == u and x not in visited:
+                    neighbors.append((x, w))
+
+            # Thêm neighbor vào stack (reversed để ưu tiên thứ tự)
+            for neighbor, weight in reversed(neighbors):
+                stack.append(neighbor)
+                predecessor[neighbor] = u
+                distances[neighbor] = distances[u] + weight
+
+        return predecessor, distances
 
     # duyệt bellman
     def bellman_ford(self, vertices, start):
@@ -196,3 +217,84 @@ class Algorithm:
                 return None  # có chu trình âm
 
         return distance
+
+    #thuật toán dijkistra
+    def dijkstra_all(self, start):
+        """
+        Dijkstra từ start đến tất cả các đỉnh khác.
+        Trả về dict {đỉnh: khoảng cách ngắn nhất}
+        """
+        if start not in self.vertices:
+            return {}
+
+        import heapq
+
+        dist = {v: float('inf') for v in self.vertices}
+        dist[start] = 0
+
+        pq = [(0, start)]  # (khoảng cách, đỉnh)
+
+        while pq:
+            current_dist, u = heapq.heappop(pq)
+
+            if current_dist > dist[u]:
+                continue
+
+            for (x, y), w in self.edges.items():
+                if x == u:
+                    v = y
+                elif not self.directed and y == u:
+                    v = x
+                else:
+                    continue
+
+                alt = dist[u] + w
+                if alt < dist[v]:
+                    dist[v] = alt
+                    heapq.heappush(pq, (alt, v))
+
+        return dist
+
+    #thuật toán prim
+    def prim(self, start):
+        if start not in self.vertices:
+            return None, 0, []
+
+        import heapq
+
+        mst_edges = []
+        total_weight = 0
+        order = [start]  # Thứ tự thêm đỉnh
+        visited = set([start])
+        edges = []
+
+        # Thêm tất cả cạnh từ start vào heap
+        for (u, v), w in self.edges.items():
+            if u == start:
+                heapq.heappush(edges, (w, u, v))
+            elif v == start:
+                heapq.heappush(edges, (w, v, u))
+
+        while edges and len(visited) < len(self.vertices):
+            w, u, v = heapq.heappop(edges)
+            if v in visited:
+                continue
+            if u not in visited:
+                u, v = v, u  # Đảo để u đã visit, v mới
+
+            visited.add(v)
+            order.append(v)
+            mst_edges.append((u, v, w))
+            total_weight += w
+
+            # Thêm các cạnh mới từ v
+            for (x, y), ww in self.edges.items():
+                if x == v and y not in visited:
+                    heapq.heappush(edges, (ww, x, y))
+                elif y == v and x not in visited:
+                    heapq.heappush(edges, (ww, y, x))
+
+        if len(visited) < len(self.vertices):
+            return None, 0, order  # Không liên thông
+
+        return mst_edges, total_weight, order

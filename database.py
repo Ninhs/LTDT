@@ -10,18 +10,31 @@ class NebulaDB:
         if cls._pool is None:
             config = Config()
             config.max_connection_pool_size = 10
-            config.timeout = 30000
+            config.timeout = 30000  # 30 giây
 
             cls._pool = ConnectionPool()
-            cls._pool.init([('127.0.0.1', 9669)], config)
-
-            cls._session = cls._pool.get_session('root', 'nebula')
-            cls._session.execute('USE graph_project;')
+            try:
+                cls._pool.init([('127.0.0.1', 9669)], config)
+                cls._session = cls._pool.get_session('root', 'nebula')
+                cls._session.execute('USE graph_project;')
+            except Exception as e:
+                print(f"Lỗi kết nối NebulaGraph: {e}")
+                cls._pool = None
+                cls._session = None
+                raise
 
     @classmethod
     def get_session(cls):
         if cls._session is None:
-            cls.init()
+            import time
+            for attempt in range(5):
+                try:
+                    cls.init()
+                    return cls._session
+                except Exception as e:
+                    print(f"Lần thử {attempt + 1}/5: Chưa kết nối được NebulaGraph ({e}), chờ 5 giây...")
+                    time.sleep(5)
+            raise RuntimeError("Không thể kết nối NebulaGraph sau 5 lần thử")
         return cls._session
 
     @classmethod

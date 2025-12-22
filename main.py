@@ -50,7 +50,8 @@ cb_start.current(0)
 cb_start.grid(row=0, column=1, padx=5, pady=5)
 
 tk.Label(frame_traverse, text="Đỉnh bắt đầu:", bg="cyan").grid(row=1, column=0, padx=1, pady=1, sticky="w")
-tk.Entry(frame_traverse).grid(row=1, column=1, padx=1, pady=1)
+entry_right = tk.Entry(frame_traverse)
+entry_right.grid(row=1, column=1, padx=1, pady=1)
 btn_right = tk.Button(frame_traverse, text="Duyệt", width=10, height=1)
 btn_right.grid(row=1, column=2, padx=30, pady=1)
 
@@ -97,12 +98,23 @@ entry_weight.grid(row=2, column=1, sticky='ew', padx=(0, 10), pady=8)
 # Nút Thêm cạnh
 btn_add_edge = tk.Button(frame_add, text="Thêm cạnh", width=25, bg="lightgreen")
 btn_add_edge.grid(row=3, column=0, columnspan=3,sticky="we", padx=5, pady=25, ipady=10)
-tk.Button(frame_add, text="Mở data", bg="yellow").grid(row=4, column=0, columnspan=3, sticky="we", padx=5, pady=5, ipady=10)
+
+# Combobox chọn space (đồ thị)
+space_var = tk.StringVar()
+space_cb = ttk.Combobox(frame_add, textvariable=space_var, state="readonly",
+                        values=["do_thi_1", "do_thi_2", "graph_project"], width=22)
+space_cb.grid(row=4, column=1, columnspan=3, padx=5, pady=5)
+btn_load_db = tk.Button(frame_add, text="Mở data", bg="yellow")
+btn_load_db.grid(row=4, column=0, columnspan=3,sticky="w", padx=5, pady=5, ipady=10)
 btn_add_vertex = tk.Button(frame_add, text="Thêm đỉnh")
+
 btn_add_vertex.grid(row=5, column=0, columnspan=3, sticky="we", padx=5, pady=5, ipady=10)
-tk.Button(frame_add, text="Cập nhật", padx=20, pady=8).grid(row=6, column=0, padx=(0,5), sticky="we")
-tk.Button(frame_add, text="Di chuyển", padx=20, pady=8).grid(row=6, column=1, padx=(0, 5), sticky="we")
-tk.Button(frame_add, text="Làm mới", padx=20, pady=8).grid(row=6, column=2, sticky="we")
+btn_update = tk.Button(frame_add, text="Cập nhật", padx=20, pady=8)
+btn_update.grid(row=6, column=0, padx=(0,5), sticky="we")
+btn_move = tk.Button(frame_add, text="Di chuyển", padx=20, pady=8)
+btn_move.grid(row=6, column=1, padx=(0, 5), sticky="we")
+btn_clear = tk.Button(frame_add, text="Làm mới", padx=20, pady=8)
+btn_clear.grid(row=6, column=2, sticky="we")
 
 controller = GraphController(
     canvas=canvas,
@@ -114,14 +126,23 @@ controller = GraphController(
     entry_weight=entry_weight,
     btn_add_edge=btn_add_edge,
     algo_var=cb_start,
-    start_vertex_cb=start_vertex,
+    entry_start=entry_right,
+    space_cb=space_cb,
+    btn_load_db=btn_load_db,
+    btn_update=btn_update,
+    btn_move=btn_move,
+    btn_clear=btn_clear,
     end_vertex_cb=end_vertex
 )
 
-# Bind nút "Thêm cạnh" để gọi hàm add_edge trong controller
+# thực hiện các chức năng từ controller
 btn_add_edge.config(command=controller.add_edge)
 btn_right.config(command=controller.run_algorithm)
 btn_add_vertex.config(command=controller.enable_add_vertex)
+btn_load_db.config(command=controller.load_from_db)
+btn_update.config(command=controller.update_graph)
+btn_move.config(command=controller.enable_move_mode)
+btn_clear.config(command=controller.clear_canvas)
 
 
 frame_add.columnconfigure(0, weight=1, uniform="group")
