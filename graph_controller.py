@@ -1,5 +1,6 @@
 from graph_model import Graph, Algorithm
 from database import NebulaDB
+from nebula3.common.ttypes import Value
 import tkinter as tk
 import math
 import random
@@ -690,136 +691,153 @@ class GraphController:
             self.text_result.insert("end", f"Tổng trọng số: {total_weight}\n")
 
     def refresh_space_list(self):
-        try:
-            session = NebulaDB.get_session()
-            result = session.execute('SHOW SPACES;')
-            if result.is_succeeded():
-                spaces = []
-                for row in result.rows():
-                    try:
-                        space_name = row.values()[0].as_string()
-                        spaces.append(space_name)
-                    except:
-                        continue
+        self.clear_result()
 
-                self.space_cb['values'] = tuple(spaces)
-
-                if spaces:
-                    self.space_var.set(spaces[0])
-                    self.text_result.insert("end", f"ONLINE: Tìm thấy {len(spaces)} space: {', '.join(spaces)}\n")
-                else:
-                    self.text_result.insert("end", "ONLINE: Không có space nào\n")
-            else:
-                raise Exception("Query thất bại")
-        except Exception as e:
-            self.text_result.insert("end", f"Lỗi NebulaGraph: {e} - Chạy offline tạm thời\n")
+        session = self.connect_graph_space()
+        if session is None:
             self.space_cb['values'] = ("graph_project",)
             self.space_var.set("graph_project")
+            return
+        try:
+            result = session.execute("SHOW SPACES;")
+            if not result.is_succeeded():
+                raise Exception("SHOW SPACES thất bại")
+
+            spaces = []
+            for row in result.rows():
+                spaces.append(row.values[0].get_sVal().decode())
+
+            self.space_cb['values'] = tuple(spaces)
+
+            if spaces:
+                self.space_var.set(spaces[0])
+                self.text_result.insert(
+                    "end",
+                    f"ONLINE: số lượng space {len(spaces)}, space được kết nối: {', '.join(spaces)}\n"
+                )
+            else:
+                self.text_result.insert("end", "ONLINE: Không có space nào\n")
+
+        except Exception as e:
+            self.text_result.insert("end", f"Lỗi NebulaGraph: {e}\n")
 
     def load_from_db(self):
-        # 1. Kết nối space chuẩn (KHÔNG phụ thuộc space_var)
-        if not self.connect_graph_space():
+        self.clear_result()
+
+        session = self.connect_graph_space()
+        if session is None:
+            self.text_result.insert("end", "Không thể load - đang chạy offline\n")
             return
 
         self.text_result.insert("end", "Đang load đồ thị từ database...\n")
         self.text_result.see("end")
 
         try:
-            session = NebulaDB.get_session()
-            if hasattr(session, 'execute') and "FAKE" in str(type(session)):
-                self.text_result.insert("end", "Không thể load - đang chạy offline\n")
-                return
-
-            # 2. Đọc config hướng đồ thị
+            # 1. Đọc config hướng
             is_directed_from_db = False
             try:
                 config_result = session.execute(
                     'MATCH (v:graph_config) WHERE id(v) == "config" YIELD v.is_directed'
                 )
                 if config_result.is_succeeded() and config_result.row_size() > 0:
-                    val = config_result.rows()[0].values()[0]
+                    val = config_result.rows()[0].values[0]
                     if val.is_bool():
                         is_directed_from_db = val.as_bool()
-            except Exception:
-                self.text_result.insert(
-                    "end", "Không tìm thấy config hướng, mặc định vô hướng\n"
-                )
+            except:
+                pass
 
-            # 3. Set hướng đồ thị
-            self.graph_type_var.set(
-                "co_huong" if is_directed_from_db else "vo_huong"
-            )
+            # 2. Set hướng đồ thị
+            self.graph_type_var.set("co_huong" if is_directed_from_db else "vo_huong")
             self.graph.directed = is_directed_from_db
-            self.text_result.insert(
-                "end",
-                f"Đồ thị load là {'có hướng' if is_directed_from_db else 'vô hướng'}\n"
-            )
 
-            # 4. Lấy cạnh
+            # 3. Lấy cạnh
             result = session.execute(
-                'MATCH (v1)-[e:connect]->(v2) RETURN id(v1), id(v2), e.weight LIMIT 1000'
+                '''
+                MATCH (v1)-[e:connect]->(v2)
+                RETURN
+                  tostring(id(v1)),
+                  tostring(id(v2)),
+                  CASE WHEN e.weight IS NULL THEN 1.0 ELSE toFloat(e.weight) END
+                LIMIT 1000
+                '''
             )
-            if not result.is_succeeded():
-                self.text_result.insert("end", "Không đọc được cạnh từ DB\n")
+            if not result.is_succeeded() or result.row_size() == 0:
+                self.text_result.insert("end", "Space trống hoặc không có cạnh!\n")
                 return
 
-            # 5. Lấy tọa độ
+            # 4. Lấy tọa độ đỉnh
             coordinates = {}
             coord_result = session.execute(
-                'MATCH (v:point) RETURN id(v), v.x, v.y'
+                '''
+                MATCH (v:point)
+                RETURN
+                  tostring(id(v)),
+                  CASE WHEN v.x IS NULL THEN NULL ELSE toFloat(v.x) END,
+                  CASE WHEN v.y IS NULL THEN NULL ELSE toFloat(v.y) END
+                '''
             )
+
             if coord_result.is_succeeded():
                 for row in coord_result.rows():
-                    vid = row.values()[0].as_string()
-                    x = row.values()[1].as_double()
-                    y = row.values()[2].as_double()
+                    vid = row.values[0].get_sVal().decode("utf-8")
+
+                    x_val = row.values[1]
+                    y_val = row.values[2]
+
+                    try:
+                        x = x_val.get_dVal()
+                        y = y_val.get_dVal()
+                    except AssertionError:
+                        continue  # bỏ đỉnh lỗi
+
                     coordinates[vid] = (x, y)
 
-            # 6. Clear graph & canvas
+            # 5. Xóa cũ, tạo graph mới
             self.canvas.delete("all")
-            self.graph.vertices.clear()
-            self.graph.edges.clear()
+            self.graph = Graph(directed=is_directed_from_db)
             self.vertex_count = 0
 
-            # 7. Gom vertex & edge
+            # 6. Thêm đỉnh vào model
             vertices_set = set()
-            edges_data = []
-
             for row in result.rows():
-                src = row.values()[0].as_string()
-                dst = row.values()[1].as_string()
-                weight = row.values()[2].as_double()
+                src = row.values[0].get_sVal().decode("utf-8")
+                dst = row.values[1].get_sVal().decode("utf-8")
                 vertices_set.add(src)
                 vertices_set.add(dst)
-                edges_data.append((src, dst, weight))
 
-            # 8. Thêm đỉnh
-            w, h = 678, 400
+            w_canvas, h_canvas = 678, 400
             for vid in vertices_set:
-                x, y = coordinates.get(
-                    vid,
-                    (random.randint(50, w - 50), random.randint(50, h - 50))
-                )
+                x, y = coordinates.get(vid, (random.randint(50, w_canvas - 50), random.randint(50, h_canvas - 50)))
                 self.graph.add_vertex(vid, x, y)
-                self.vertex_count = max(
-                    self.vertex_count, int(vid) if vid.isdigit() else 0
-                )
-                self.draw_vertex(vid)
+                self.vertex_count = max(self.vertex_count, int(vid) if vid.isdigit() else 0)
 
-            # 9. Thêm cạnh + vẽ
-            for src, dst, weight in edges_data:
+            # 7. Thêm cạnh vào model
+            for row in result.rows():
+                src = row.values[0].get_sVal().decode("utf-8")
+                dst = row.values[1].get_sVal().decode("utf-8")
+
+                try:
+                    weight = row.values[2].get_dVal()
+                except AssertionError:
+                    weight = 1.0  # fallback
+
                 self.graph.add_edge(src, dst, weight)
-                self.draw_edge(src, dst, weight)
 
-            # 10. Hiển thị ma trận
+            # 8. DÙNG REDRAW_ALL ĐỂ VẼ TOÀN BỘ (chỉ 1 dòng!)
+            self.redraw_all()
+
+            # 9. Cập nhật ma trận
             self.show_matrix()
-            self.text_result.insert("end", "Load thành công!\n")
+
+            self.text_result.insert("end",
+                                    f"Load thành công {len(vertices_set)} đỉnh, {len(result.rows())} cạnh từ DB!\n")
 
         except Exception as e:
             self.text_result.insert("end", f"Lỗi load: {str(e)}\n")
-            self.text_result.insert(
-                "end", "Chương trình vẫn chạy offline bình thường.\n"
-            )
+            self.text_result.insert("end", "Chương trình vẫn chạy offline bình thường.\n")
+            import traceback
+            self.text_result.insert("end", "Lỗi load (traceback):\n")
+            self.text_result.insert("end", traceback.format_exc() + "\n")
 
     def rebuild_edges_on_type_change(self):
         old_edges = list(self.graph.edges.items())
@@ -840,25 +858,26 @@ class GraphController:
     def connect_graph_space(self):
         try:
             session = NebulaDB.get_session()
-            space = "graph_project"
+            if session is None:
+                raise Exception("Session rỗng")
 
+            space = "graph_project"
             result = session.execute(f"USE {space};")
-            if result.is_succeeded():
-                self.space_var.set(space)
-                self.text_result.insert(
-                    "end",
-                    f"ONLINE: Đã kết nối space {space}\n"
-                )
-                return True
-            else:
+
+            if not result.is_succeeded():
                 raise Exception("Không USE được space")
+
+            self.space_var.set(space)
+            self.text_result.insert("end", f"ONLINE: Đã kết nối space\n")
+
+            return session
 
         except Exception as e:
             self.text_result.insert(
                 "end",
-                f"OFFLINE: Không kết nối được space {space} ({e})\n"
+                f"OFFLINE: Không kết nối được space graph_project ({e})\n"
             )
-            return False
+            return None
 
     def save_vertex_to_db(self, vid, x, y):
         if not self.connect_graph_space():
