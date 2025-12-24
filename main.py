@@ -21,11 +21,11 @@ frame_vertices = tk.LabelFrame(root, text="Đỉnh", bg="cyan")
 frame_vertices.place(x=220, y=10, width=396, height=80)
 
 tk.Label(frame_vertices, text="Đỉnh đầu:", bg="cyan").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-start_vertex_cb = ttk.Combobox(frame_vertices)
+start_vertex_cb = ttk.Entry(frame_vertices)
 start_vertex_cb.grid(row=1, column=0, padx=5, pady=5)
 
 tk.Label(frame_vertices, text="Đỉnh đích:", bg="cyan").grid(row=0, column=1, sticky="w", padx=5, pady=5)
-end_vertex_cb = ttk.Combobox(frame_vertices)
+end_vertex_cb = ttk.Entry(frame_vertices)
 end_vertex_cb.grid(row=1, column=1, padx=5, pady=5)
 
 btn_find_path = tk.Button(frame_vertices, text="Tìm đường đi", bg="orange")
@@ -102,11 +102,16 @@ btn_add_edge.grid(row=3, column=0, columnspan=3,sticky="we", padx=5, pady=25, ip
 
 # Combobox chọn space (đồ thị)
 space_var = tk.StringVar()
-space_cb = ttk.Combobox(frame_add, textvariable=space_var, state="readonly",
-                        values=["do_thi_1", "do_thi_2", "graph_project"], width=22)
-space_cb.grid(row=4, column=1, columnspan=3, padx=5, pady=5)
+space_cb = ttk.Combobox(frame_add,
+                        textvariable=space_var,
+                        state="readonly",
+                        values=["graph_project"],
+                        width=22)
+space_cb.grid(row=4, column=2, columnspan=3, padx=5, pady=5)
 btn_load_db = tk.Button(frame_add, text="Mở data", bg="yellow")
-btn_load_db.grid(row=4, column=0, columnspan=3,sticky="w", padx=5, pady=5, ipady=10)
+btn_load_db.grid(row=4, column=0, columnspan=1,sticky="w", padx=5, pady=5, ipady=10)
+btn_save_config = tk.Button(frame_add, text="Lưu config", bg="lightblue")
+btn_save_config.grid(row=4, column=1, columnspan=1, pady=5)
 btn_add_vertex = tk.Button(frame_add, text="Thêm đỉnh")
 
 btn_add_vertex.grid(row=5, column=0, columnspan=3, sticky="we", padx=5, pady=5, ipady=10)
@@ -116,6 +121,7 @@ btn_move = tk.Button(frame_add, text="Di chuyển", padx=20, pady=8)
 btn_move.grid(row=6, column=1, padx=(0, 5), sticky="we")
 btn_clear = tk.Button(frame_add, text="Làm mới", padx=20, pady=8)
 btn_clear.grid(row=6, column=2, sticky="we")
+
 
 controller = GraphController(
     canvas=canvas,
@@ -135,7 +141,8 @@ controller = GraphController(
     btn_clear=btn_clear,
     start_vertex_cb=start_vertex_cb,
     end_vertex_cb=end_vertex_cb,
-    btn_find_path=btn_find_path
+    btn_find_path=btn_find_path,
+    space_var=space_var
 )
 
 # thực hiện các chức năng từ controller
@@ -147,6 +154,7 @@ btn_update.config(command=controller.update_graph)
 btn_move.config(command=controller.enable_move_mode)
 btn_clear.config(command=controller.clear_canvas)
 btn_find_path.config(command=controller.run_find_path)
+btn_save_config.config(command=controller.save_graph_config)
 
 
 frame_add.columnconfigure(0, weight=1, uniform="group")

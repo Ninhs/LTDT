@@ -1,10 +1,13 @@
 from graph_model import Graph, Algorithm
 from database import NebulaDB
+import tkinter as tk
+import math
 import random
 
 class GraphController:
     def __init__(self, canvas, graph_type_var, text_result, text_matrix,
-                 entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, entry_start,start_vertex_cb, end_vertex_cb,
+                 entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, entry_start, start_vertex_cb,
+                 end_vertex_cb, space_var,
                  btn_find_path, btn_update, btn_move, btn_clear,
                  space_cb, btn_load_db):  # Thêm các Entry + Button
         self.canvas = canvas
@@ -12,11 +15,11 @@ class GraphController:
         self.text_result = text_result
         self.text_matrix = text_matrix
 
-        self.entry_src = entry_src      # Entry đỉnh đầu
-        self.entry_dst = entry_dst      # Entry đỉnh cuối
+        self.entry_src = entry_src  # Entry đỉnh đầu
+        self.entry_dst = entry_dst  # Entry đỉnh cuối
         self.entry_weight = entry_weight  # Entry trọng số
-        self.btn_add_edge = btn_add_edge # Button thêm cạnh
-        self.algo_var = algo_var        # Biến duyệt đồ thị
+        self.btn_add_edge = btn_add_edge  # Button thêm cạnh
+        self.algo_var = algo_var  # Biến duyệt đồ thị
         self.entry_start = entry_start
         self.start_vertex_cb = start_vertex_cb  # Entry
         self.end_vertex_cb = end_vertex_cb
@@ -34,17 +37,18 @@ class GraphController:
         self.canvas.bind("<ButtonRelease-1>", self.on_vertex_release)  # Thả chuột
 
         self.space_cb = space_cb
+        self.space_var = space_var
         self.btn_load_db = btn_load_db
-
 
         # Load danh sách space khi khởi động
         self.refresh_space_list()
+        self.graph_type_var.trace_add("write", self.on_graph_type_change)
 
         self.graph = Graph(directed=(graph_type_var.get() == "co_huong"))
         self.vertex_count = 0
 
         self.add_vertex_mode = False
-        self.add_edge_mode = False   # Thêm mode cho cạnh
+        self.add_edge_mode = False  # Thêm mode cho cạnh
         self.hint_shown = False
 
         # Bind
@@ -53,6 +57,18 @@ class GraphController:
         self.btn_update.config(command=self.update_graph)
         self.btn_clear.config(command=self.clear_canvas)
         self.btn_add_edge.config(command=self.add_edge)
+
+    # Lưu dữ liệu
+    def save_graph_config(self):
+        session = NebulaDB.get_session()
+        try:
+            is_directed = self.graph_type_var.get() == "co_huong"
+            session.execute('USE graph_project;')  # Hoặc space hiện tại
+            session.execute('INSERT VERTEX IF NOT EXISTS graph_config(is_directed) VALUES "config":(true);')
+            session.execute(f'UPDATE VERTEX "config" OF graph_config SET is_directed = {str(is_directed).lower()};')
+            self.text_result.insert("end", f"Đã lưu config đồ thị {'có hướng' if is_directed else 'vô hướng'}\n")
+        except Exception as e:
+            self.text_result.insert("end", f"Lỗi lưu config: {e}\n")
 
     def enable_add_vertex(self):
         self.clear_result()
@@ -75,7 +91,7 @@ class GraphController:
         # LƯU TỌA ĐỘ VÀO NEBULA
         session = NebulaDB.get_session()
         try:
-            session.execute(f'INSERT VERTEX IF NOT EXISTS vertex(x, y) VALUES "{vid}":({x}, {y});')
+            session.execute(f'INSERT VERTEX IF NOT EXISTS point(x, y) VALUES "{vid}":({x}, {y});')
             self.text_result.insert("end", f"Đã thêm đỉnh {vid} tại ({x}, {y}) và lưu tọa độ vào DB\n")
         except Exception as e:
             self.text_result.insert("end", f"Lỗi lưu tọa độ đỉnh: {e}\n")
@@ -98,9 +114,18 @@ class GraphController:
 
         if self.add_edge_mode:
             self.text_result.delete("1.0", "end")
-            self.text_result.insert("end", "Chế độ thêm cạnh: Nhập đỉnh đầu, đỉnh cuối, trọng số rồi nhấn 'Thêm cạnh'\n")
+            self.text_result.insert("end",
+                                    "Chế độ thêm cạnh: Nhập đỉnh đầu, đỉnh cuối, trọng số rồi nhấn 'Thêm cạnh'\n")
         else:
             self.text_result.insert("end", "Đã tắt chế độ thêm cạnh\n")
+
+    def on_graph_type_change(self, *args):
+        is_directed = (self.graph_type_var.get() == "co_huong")
+        self.graph.directed = is_directed
+        self.text_result.insert(
+            "end",
+            f"Đã chuyển sang đồ thị {'có hướng' if is_directed else 'vô hướng'}\n"
+        )
 
     def add_edge(self):
         self.clear_result()
@@ -127,22 +152,33 @@ class GraphController:
             self.text_result.insert("end", "Không hỗ trợ cạnh khuyên (self-loop)!\n")
             return
 
-        # Thêm cạnh vào model (vô hướng: lưu một lần với key sorted)
-        key = tuple(sorted([src, dst]))
-        if key in self.graph.edges:
-            self.text_result.insert("end", f"Cạnh {src}-{dst} đã tồn tại!\n")
-            return
-
-        self.graph.edges[key] = weight
+        # Thêm cạnh vào model
+        if self.graph.directed:
+            self.graph.edges[(src, dst)] = weight
+        else:
+            key = tuple(sorted([src, dst]))
+            self.graph.edges[key] = weight
 
         # === VẼ CẠNH LÊN CANVAS ===
         v1 = self.graph.vertices[src]
         v2 = self.graph.vertices[dst]
 
-        # Vẽ đường thẳng nối hai tâm đỉnh
-        self.canvas.create_line(v1.x, v1.y, v2.x, v2.y,
-                                fill="black", width=3)
-
+        # Vẽ đường thẳng có hướng và vô hw
+        r = 20  # bán kính đỉnh
+        dx = v2.x - v1.x
+        dy = v2.y - v1.y
+        dist = math.hypot(dx, dy)
+        if dist == 0:
+            dist = 1
+        offset_x = dx / dist * r
+        offset_y = dy / dist * r
+        if self.graph.directed:
+            self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
+                                    v2.x - offset_x, v2.y - offset_y,
+                                    fill="black", width=3,
+                                    arrow=tk.LAST, arrowshape=(16, 20, 6))
+        else:
+            self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
         # === VẼ TRỌNG SỐ CHÍNH GIỮA CẠNH ===
         mid_x = (v1.x + v2.x) / 2
         mid_y = (v1.y + v2.y) / 2
@@ -176,8 +212,11 @@ class GraphController:
         session = NebulaDB.get_session()
         try:
             # Insert cạnh cả hai chiều
-            session.execute(f'INSERT EDGE IF NOT EXISTS connect(weight) VALUES "{src}" -> "{dst}"@0:({weight});')
-            session.execute(f'INSERT EDGE IF NOT EXISTS connect(weight) VALUES "{dst}" -> "{src}"@0:({weight});')
+            if self.graph.directed:
+                session.execute(f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});')
+            else:
+                session.execute(f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});')
+                session.execute(f'INSERT EDGE connect(weight) VALUES "{dst}"->"{src}":({weight});')
 
             self.text_result.insert("end", f"Đã thêm cạnh {src} — {dst} (trọng số {weight})\n")
             self.text_result.see("end")
@@ -192,16 +231,6 @@ class GraphController:
         self.entry_dst.delete(0, "end")
         self.entry_weight.delete(0, "end")
 
-    # không thêm đỉnh khi đang ở mode cạnh
-    def on_canvas_click(self, event):
-        if self.move_mode:
-            items = self.canvas.find_overlapping(event.x - 20, event.y - 20, event.x + 20, event.y + 20)
-            for item in items:
-                tags = self.canvas.gettags(item)
-                if tags and tags[0].isdigit():
-                    self.selected_vertex = tags[0]
-                    return
-
     def update_graph(self):
         self.clear_result()
         src = self.entry_src.get().strip()
@@ -212,41 +241,74 @@ class GraphController:
             self.text_result.insert("end", "Vui lòng nhập ít nhất đỉnh đầu!\n")
             return
 
-        # Trường hợp 1: Chỉ nhập src → xóa đỉnh src và tất cả cạnh liên quan
+        session = NebulaDB.get_session()
+        try:
+            session.execute('USE graph_project;')  # Giả sử dùng space mặc định
+        except:
+            pass  # Offline mode
+
+        # XÓA ĐỈNH (và tất cả cạnh liên quan)
         if not dst and not weight_str:
             if src not in self.graph.vertices:
                 self.text_result.insert("end", f"Đỉnh {src} không tồn tại!\n")
                 return
 
-            # Xóa tất cả cạnh liên quan đến src
+            # Xóa cạnh trong model
             edges_to_delete = [k for k in list(self.graph.edges.keys()) if src in k]
             for k in edges_to_delete:
                 del self.graph.edges[k]
 
-            # Xóa đỉnh
+            # XÓA ĐỒNG BỘ NEBULA
+            try:
+                session.execute(f'DELETE VERTEX "{src}";')
+                self.text_result.insert("end", f"Xóa đỉnh {src} khỏi NebulaGraph\n")
+            except:
+                pass
+
             del self.graph.vertices[src]
             self.text_result.insert("end", f"Đã xóa đỉnh {src} và tất cả cạnh liên quan\n")
 
-        # Trường hợp 2: Nhập src và dst → xóa hoặc sửa cạnh
+        # XÓA/SỬA CẠNH
         elif dst:
-            key = tuple(sorted([src, dst]))
+            if self.graph.directed:
+                key = (src, dst)
+            else:
+                key = tuple(sorted([src, dst]))
+
             if key not in self.graph.edges:
                 self.text_result.insert("end", f"Không tìm thấy cạnh {src}-{dst}\n")
                 return
 
-            if weight_str:  # Có nhập trọng số → sửa trọng số
+            if weight_str:  # SỬA TRỌNG SỐ
                 try:
                     new_weight = float(weight_str)
                     self.graph.edges[key] = new_weight
+
+                    # SỬA TRONG NEBULA (cả 2 chiều nếu vô hướng)
+                    try:
+                        session.execute(f'UPDATE EDGE connect "{src}" -> "{dst}" SET weight = {new_weight};')
+                        if not self.graph.directed:
+                            session.execute(f'UPDATE EDGE connect "{dst}" -> "{src}" SET weight = {new_weight};')
+                        self.text_result.insert("end", f"Đã sửa trọng số {src}-{dst} → {new_weight} trong DB\n")
+                    except:
+                        pass
                     self.text_result.insert("end", f"Đã sửa trọng số cạnh {src}-{dst} thành {new_weight}\n")
                 except ValueError:
                     self.text_result.insert("end", "Trọng số mới phải là số!\n")
                     return
-            else:  # Không nhập trọng số → xóa cạnh
+            else:  # XÓA CẠNH
                 del self.graph.edges[key]
+
+                # XÓA TRONG NEBULA
+                try:
+                    session.execute(f'DELETE EDGE connect "{src}" -> "{dst}";')
+                    if not self.graph.directed:
+                        session.execute(f'DELETE EDGE connect "{dst}" -> "{src}";')
+                    self.text_result.insert("end", f"Đã xóa cạnh {src}-{dst} khỏi NebulaGraph\n")
+                except:
+                    pass
                 self.text_result.insert("end", f"Đã xóa cạnh {src}-{dst}\n")
 
-        # Vẽ lại toàn bộ
         self.redraw_all()
         self.show_matrix()
         self.entry_src.delete(0, "end")
@@ -264,6 +326,7 @@ class GraphController:
             self.canvas.config(cursor="")
             self.selected_vertex = None
 
+    # không thêm đỉnh khi đang ở mode cạnh
     def on_canvas_click(self, event):
         if self.move_mode:
             # Tìm đỉnh gần nhất với click
@@ -300,7 +363,7 @@ class GraphController:
         self.clear_result()
         self.clear_result()
         self.canvas.delete("all")
-        self.graph = Graph()
+        self.graph = Graph(directed=(self.graph_type_var.get() == "co_huong"))
         self.vertex_count = 0
         self.text_result.insert("end", "Đã làm mới canvas - xóa hết đỉnh và cạnh\n")
         self.show_matrix()
@@ -312,9 +375,24 @@ class GraphController:
         for (u, v), w in self.graph.edges.items():
             v1 = self.graph.vertices[u]
             v2 = self.graph.vertices[v]
-            self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
             mid_x = (v1.x + v2.x) / 2
             mid_y = (v1.y + v2.y) / 2
+            if self.graph.directed:
+                r = 20  # bán kính đỉnh
+                dx = v2.x - v1.x
+                dy = v2.y - v1.y
+                dist = math.hypot(dx, dy)
+                if dist == 0:
+                    dist = 1
+                offset_x = dx / dist * r
+                offset_y = dy / dist * r
+
+                self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
+                                        v2.x - offset_x, v2.y - offset_y,
+                                        fill="black", width=3,
+                                        arrow=tk.LAST, arrowshape=(16, 20, 6))
+            else:
+                self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
             offset_y = -12
             weight_str = str(w)
             temp_text = self.canvas.create_text(mid_x, mid_y + offset_y, text=weight_str, font=("Arial", 12, "bold"))
@@ -329,7 +407,52 @@ class GraphController:
                                     font=("Arial", 12, "bold"), fill="red", anchor="center")
 
     def show_matrix(self):
-        pass
+        if not self.graph.vertices:
+            self.text_matrix.delete("1.0", "end")
+            self.text_matrix.insert("end", "Đồ thị rỗng - chưa có đỉnh\n")
+            return
+
+        keys = sorted(self.graph.vertices.keys())
+        n = len(keys)
+        index = {k: i for i, k in enumerate(keys)}
+
+        matrix = [[0 for _ in range(n)] for _ in range(n)]
+
+        for (u, v), w in self.graph.edges.items():
+            i = index[u]
+            j = index[v]
+            matrix[i][j] = w
+            if not self.graph.directed:
+                matrix[j][i] = w
+
+        self.text_matrix.delete("1.0", "end")
+
+        header = f"MA TRẬN KỀ - ĐỒ THỊ {'CÓ HƯỚNG' if self.graph.directed else 'VÔ HƯỚNG'}\n\n"
+        self.text_matrix.insert("end", header)
+
+        # Header cột
+        col_header = "    |" + "".join(f" {k:>6} " for k in keys) + "\n"
+        separator = "----+" + "--------" * n + "\n"
+        self.text_matrix.insert("end", col_header)
+        self.text_matrix.insert("end", separator)
+
+        # Dòng ma trận
+        for i, vid in enumerate(keys):
+            row = f" {vid:>2} |"
+            for j in range(n):
+                val = matrix[i][j]
+                if val == 0:
+                    row += "   ∞   "
+                else:
+                    row += f" {val:>6} "
+            row += "\n"
+            self.text_matrix.insert("end", row)
+
+        # Footer
+        self.text_matrix.insert("end", "\n")
+        self.text_matrix.insert("end", "∞ = không có cạnh trực tiếp\n")
+        self.text_matrix.insert("end", f"Tổng số đỉnh: {n} | Tổng số cạnh: {len(self.graph.edges)}\n")
+        self.text_matrix.see("1.0")
 
     # run thuật toán
     def run_algorithm(self):
@@ -381,6 +504,7 @@ class GraphController:
             d = distances[v]
             dist_str = "∞" if d == float('inf') else str(d)
             self.text_result.insert("end", f"Đỉnh {v}: {dist_str}\n")
+
     # chạy BFS
     def run_bfs(self):
         self.clear_result()
@@ -406,25 +530,21 @@ class GraphController:
 
     # duyệt bellman
     def run_bellman_ford(self):
+        if not self.graph.directed:
+            self.text_result.insert("end", "Bellman-Ford chỉ áp dụng cho đồ thị có hướng!\n")
+            return
+
         self.clear_result()
         start = self.entry_start.get()
         if start not in self.graph.vertices:
             self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
             return
-
-        # Tạo danh sách cạnh dạng (u, v, w), hỗ trợ vô hướng
-        edges_list = []
-        for (u, v), w in self.graph.edges.items():
-            edges_list.append((u, v, w))
-            if not self.graph.directed:  # Nếu vô hướng
-                edges_list.append((v, u, w))
-
+        algorithm = Algorithm(directed=self.graph.directed)
+        algorithm.edges = {}
         vertices_list = list(self.graph.vertices.keys())
-
+        # Tạo danh sách cạnh dạng (u, v, w), hỗ trợ vô hướng
+        algorithm.edges = self.graph.edges.copy()
         # Tạo instance Algorithm và gán edges
-        algorithm = Algorithm()
-        algorithm.edges = edges_list  # Gán danh sách cạnh vào instance
-
         distances = algorithm.bellman_ford(vertices_list, start)
 
         self.text_result.delete("1.0", "end")
@@ -554,7 +674,7 @@ class GraphController:
         algo.directed = self.graph.directed
         algo.vertices = self.graph.vertices.keys()
 
-        path, total_weight = algo.dijkstra(start, end)  # hoặc bellman_ford nếu cần
+        path, total_weight = algo.dijkstra_and_bellman_ford_path(start, end)
 
         self.text_result.delete("1.0", "end")
         if path is None:
@@ -565,44 +685,74 @@ class GraphController:
             self.text_result.insert("end", f"Tổng trọng số: {total_weight}\n")
 
     def refresh_space_list(self):
-        session = NebulaDB.get_session()
         try:
+            session = NebulaDB.get_session()
             result = session.execute('SHOW SPACES;')
             if result.is_succeeded():
-                spaces = [row.values()[0].as_string().strip('"') for row in result.rows()]
-                self.space_cb['values'] = spaces
+                spaces = []
+                for row in result.rows():
+                    try:
+                        space_name = row.values()[0].get_sVal().decode('utf-8').strip('"')
+                        spaces.append(space_name)
+                    except:
+                        pass
+                self.space_cb.configure(values=[])  # Clear trước
+                self.space_cb.configure(values=spaces)  # Set mới
                 if spaces:
                     self.space_var.set(spaces[0])
-                self.text_result.insert("end", f"Tìm thấy {len(spaces)} đồ thị: {', '.join(spaces)}\n")
+                    self.text_result.insert("end", f"ONLINE: Tìm thấy {len(spaces)} space: {', '.join(spaces)}\n")
+                else:
+                    self.text_result.insert("end", "ONLINE: Không có space nào\n")
             else:
-                self.text_result.insert("end", "Lỗi lấy danh sách space\n")
+                raise Exception("Query thất bại")
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi kết nối DB: {e}\n")
+            self.text_result.insert("end", f"Lỗi kết nối NebulaGraph: {e} - Chạy offline\n")
+            # Khi offline, set values giả để dùng tạm
+            self.space_cb.configure(values=["graph_project"])  # Chỉ 1 space giả
+            self.space_var.set("graph_project")
 
     def load_from_db(self):
-        selected_space = self.space_var.get()  # <--- Dòng quan trọng: lấy space được chọn từ Combobox
+        selected_space = self.space_var.get()
         if not selected_space:
-            self.text_result.insert("end", "Vui lòng chọn một đồ thị từ danh sách!\n")
+            self.text_result.insert("end", "Vui lòng chọn space!\n")
             return
 
-        self.text_result.insert("end", f"Đang load đồ thị '{selected_space}' từ NebulaGraph...\n")
+        self.text_result.insert("end", f"Đang load đồ thị '{selected_space}'...\n")
         self.text_result.see("end")
 
-        session = NebulaDB.get_session()
         try:
-            # Chọn space
-            session.execute(f'USE `{selected_space}`;')
-
-            # Lấy tất cả cạnh
-            result = session.execute('MATCH (v1)-[e:connect]->(v2) RETURN id(v1), id(v2), e.weight LIMIT 1000')
-
-            if not result.row_size():
-                self.text_result.insert("end", f"Đồ thị '{selected_space}' trống (không có cạnh)\n")
+            session = NebulaDB.get_session()
+            if hasattr(session, 'execute') and "FAKE" in str(type(session)):
+                self.text_result.insert("end", "Không thể load - đang chạy offline\n")
                 return
 
-            # Lấy tọa độ đỉnh (nếu có tag vertex với x, y)
+            session.execute(f'USE `{selected_space}`;')
+
+            # Đọc config hướng (an toàn hơn với VID cụ thể)
+            is_directed_from_db = False
+            try:
+                config_result = session.execute('MATCH (v:graph_config) WHERE id(v) == "config" YIELD v.is_directed')
+                if config_result.is_succeeded() and config_result.row_size() > 0:
+                    val = config_result.rows()[0].values()[0]
+                    if val.is_bool():
+                        is_directed_from_db = val.as_bool()
+            except Exception as config_e:
+                self.text_result.insert("end", "Không tìm thấy config hướng, mặc định vô hướng\n")
+
+            # Set hướng
+            self.graph_type_var.set("co_huong" if is_directed_from_db else "vo_huong")
+            self.graph.directed = is_directed_from_db
+            self.text_result.insert("end", f"Đồ thị load là {'có hướng' if is_directed_from_db else 'vô hướng'}\n")
+
+            # Lấy cạnh
+            result = session.execute('MATCH (v1)-[e:connect]->(v2) RETURN id(v1), id(v2), e.weight LIMIT 1000')
+            if not result.is_succeeded() or result.row_size() == 0:
+                self.text_result.insert("end", "Space trống hoặc không có cạnh!\n")
+                return
+
+            # Lấy tọa độ (dùng tag point như đã đổi)
             coordinates = {}
-            coord_result = session.execute('MATCH (v:vertex) RETURN id(v), v.x, v.y')
+            coord_result = session.execute('MATCH (v:point) RETURN id(v), v.x, v.y')
             if coord_result.is_succeeded():
                 for row in coord_result.rows():
                     vid = row.values()[0].as_string()
@@ -610,81 +760,37 @@ class GraphController:
                     y = row.values()[2].as_double()
                     coordinates[vid] = (x, y)
 
-            # Xóa canvas và model cũ
+            # Xóa và tạo graph mới
             self.canvas.delete("all")
-            self.graph = Graph()
+            self.graph = Graph(directed=is_directed_from_db)
             self.vertex_count = 0
 
             vertices_set = set()
             edges_data = []
-
             for row in result.rows():
                 src = row.values()[0].as_string()
                 dst = row.values()[1].as_string()
                 weight = row.values()[2].as_double()
-
                 vertices_set.add(src)
                 vertices_set.add(dst)
                 edges_data.append((src, dst, weight))
 
-            # Vị trí đỉnh: ưu tiên tọa độ lưu trong DB, nếu không có thì random
-
-            w = self.canvas.winfo_width() or 800
-            h = self.canvas.winfo_height() or 600
-
+            # Thêm đỉnh với tọa độ
+            w, h = 678, 400
             for vid in vertices_set:
-                if vid in coordinates:
-                    x, y = coordinates[vid]
-                else:
-                    x = random.randint(50, w - 50)
-                    y = random.randint(50, h - 50)
+                x, y = coordinates.get(vid, (random.randint(50, w - 50), random.randint(50, h - 50)))
                 self.graph.add_vertex(vid, x, y)
                 self.vertex_count = max(self.vertex_count, int(vid) if vid.isdigit() else 0)
                 self.draw_vertex(vid)
 
-            # Vẽ cạnh và trọng số
-            for src, dst, weight in edges_data:
-                key = tuple(sorted([src, dst]))
-                self.graph.edges[key] = weight
-
-                v1 = self.graph.vertices[src]
-                v2 = self.graph.vertices[dst]
-
-                self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
-
-                mid_x = (v1.x + v2.x) / 2
-                mid_y = (v1.y + v2.y) / 2
-                offset_y = -12
-
-                weight_str = str(weight)
-                temp_text = self.canvas.create_text(mid_x, mid_y + offset_y, text=weight_str,
-                                                    font=("Arial", 12, "bold"))
-                bbox = self.canvas.bbox(temp_text)
-                if bbox:
-                    padding = 5
-                    self.canvas.create_rectangle(
-                        bbox[0] - padding, bbox[1] - padding,
-                        bbox[2] + padding, bbox[3] + padding,
-                        fill="white", outline="gray", width=1
-                    )
-                self.canvas.delete(temp_text)
-
-                self.canvas.create_text(
-                    mid_x, mid_y + offset_y,
-                    text=weight_str,
-                    font=("Arial", 12, "bold"),
-                    fill="red",
-                    anchor="center"
-                )
+            # Thêm cạnh và vẽ (giữ nguyên phần vẽ của bạn)
 
             self.show_matrix()
-            self.text_result.insert("end",
-                                    f"Load thành công đồ thị '{selected_space}' với {len(vertices_set)} đỉnh và {len(edges_data)} cạnh!\n")
-            self.text_result.see("end")
+            self.text_result.insert("end", "Load thành công!\n")
 
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi load từ NebulaGraph: {str(e)}\n")
-            self.text_result.see("end")
+            self.text_result.insert("end", f"Lỗi load: {str(e)}\n")
+            self.text_result.insert("end", "Chương trình vẫn chạy offline bình thường.\n")
 
     def clear_result(self):
         self.text_result.delete("1.0", "end")

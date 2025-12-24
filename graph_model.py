@@ -1,21 +1,23 @@
 from collections import deque
 import heapq
 
-class Vertex: # Lớp đỉnh
+
+class Vertex:  # Lớp đỉnh
     def __init__(self, vid, x, y):
-        self.id = vid # Mã đỉnh(A, B, 1, 2)
+        self.id = vid  # Mã đỉnh(A, B, 1, 2)
         self.x = x
         self.y = y
 
 
-class Edge: # Lớp cạnh
+class Edge:  # Lớp cạnh
     def __init__(self, u, v, weight=1, directed=False):
         self.u = u
         self.v = v
         self.weight = weight
         self.directed = directed
 
-class Graph: # Lớp lưu tạm thời đồ thị
+
+class Graph:  # Lớp lưu tạm thời đồ thị
     def __init__(self, directed=False):
         self.directed = directed
         self.vertices = {}
@@ -27,8 +29,11 @@ class Graph: # Lớp lưu tạm thời đồ thị
 
     # Thêm cạnh
     def add_edge(self, src, dst, weight=1):
-        key = tuple(sorted([src, dst]))
-        self.edges[key] = weight
+        if self.directed:
+            self.edges[(src, dst)] = weight
+        else:
+            key = tuple(sorted([src, dst]))
+            self.edges[key] = weight
 
     # Ma trận kề
     def adjacency_matrix(self):
@@ -36,31 +41,29 @@ class Graph: # Lớp lưu tạm thời đồ thị
         index = {k: i for i, k in enumerate(keys)}
         n = len(keys)
 
-        matrix = [[0]*n for _ in range(n)]
-        for e in self.edges:
-            i, j = index[e.u], index[e.v]
-            matrix[i][j] = e.weight
+        matrix = [[0] * n for _ in range(n)]
+        for (u, v), w in self.edges.items():
+            i, j = index[u], index[v]
+            matrix[i][j] = w
             if not self.directed:
-                matrix[j][i] = e.weight
-
+                matrix[j][i] = w
         return keys, matrix
+
 
 class Algorithm:
     def __init__(self, directed=False):
         self.directed = directed
-        self.vertices = {}
+        self.vertices = []
         self.edges = {}
 
-    # hàm đọc ma trận kề
-    def load_from_adj_list(self, adj_list):
-        self.vertices.clear()
-        self.edges.clear()
-        for u in adj_list:
-            self.vertices[u] = True
-        for u in adj_list:
-            for v, w in adj_list[u]:
-                key = tuple(sorted([u, v]))
-                self.edges[key] = w
+    def get_neighbors(self, u):
+        neighbors = []
+        for (x, y), w in self.edges.items():
+            if x == u:
+                neighbors.append((y, w))
+            elif not self.directed and y == u:
+                neighbors.append((x, w))
+        return neighbors
 
     # thuật toán bfs
     def bfs(self, start):
@@ -76,20 +79,12 @@ class Algorithm:
             current = queue.popleft()
 
             # Duyệt các đỉnh kề
-            for (u, v), w in self.edges.items():
-                neighbor = None
-                weight = w
-                if u == current:
-                    neighbor = v
-                elif not self.directed and v == current:
-                    neighbor = u
-
-                if neighbor and neighbor not in visited:
+            for neighbor, weight in self.get_neighbors(current):
+                if neighbor not in visited:
                     visited.add(neighbor)
                     queue.append(neighbor)
                     predecessor[neighbor] = current
                     distances[neighbor] = distances[current] + weight
-
         return predecessor, distances
 
     # thuật toán kruskal
@@ -140,29 +135,22 @@ class Algorithm:
     # thuật toán Sequential Coloring
     def sequential_coloring(self):
         colors = {}
-        vertices_list = list(self.vertices.keys())
 
-        for v in vertices_list:
+        for v in self.vertices:
             neighbor_colors = set()
-
-            for (u, w) in self.edges:
-                if u == v and w in colors:
-                    neighbor_colors.add(colors[w])
-                elif not self.directed and w == v and u in colors:
-                    neighbor_colors.add(colors[u])
-
+            for neighbor, _ in self.get_neighbors(v):
+                if neighbor in colors:
+                    neighbor_colors.add(colors[neighbor])
             color = 1
             while color in neighbor_colors:
                 color += 1
             colors[v] = color
-
         return colors
 
     # duyệt dfs
     def dfs(self, start):
         if start not in self.vertices:
             return {}, {}
-
         visited = set()
         stack = [start]
         predecessor = {start: None}
@@ -170,53 +158,40 @@ class Algorithm:
 
         while stack:
             u = stack.pop()
-
             if u in visited:
                 continue
-
             visited.add(u)
-
-            neighbors = []
-            for (x, y), w in self.edges.items():
-                if x == u and y not in visited:
-                    neighbors.append((y, w))
-                elif not self.directed and y == u and x not in visited:
-                    neighbors.append((x, w))
-
-            # Thêm neighbor vào stack (reversed để ưu tiên thứ tự)
-            for neighbor, weight in reversed(neighbors):
-                stack.append(neighbor)
-                predecessor[neighbor] = u
-                distances[neighbor] = distances[u] + weight
+            # duyệt hàng xóm
+            for neighbor, weight in reversed(list(self.get_neighbors(u))):
+                if neighbor not in visited:
+                    stack.append(neighbor)
+                    if neighbor not in predecessor:
+                        predecessor[neighbor] = u
+                        distances[neighbor] = distances[u] + weight
 
         return predecessor, distances
 
     # duyệt bellman
     def bellman_ford(self, vertices, start):
+        if not self.directed:
+            raise ValueError("Bellman-Ford chỉ áp dụng cho đồ thị có hướng")
         distance = {v: float("inf") for v in vertices}
         distance[start] = 0
-
         for _ in range(len(vertices) - 1):
-            for u, v, w in self.edges:
+            for (u, v), w in self.edges.items():
                 if distance[u] != float("inf") and distance[u] + w < distance[v]:
                     distance[v] = distance[u] + w
-
-        for u, v, w in self.edges:
+        for (u, v), w in self.edges.items():
             if distance[u] != float("inf") and distance[u] + w < distance[v]:
-                return None  # có chu trình âm
-
+                return None
         return distance
 
-    #thuật toán dijkistra
+    # thuật toán dijkistra
     def dijkstra(self, start):
         if start not in self.vertices:
             return {}
-
-        import heapq
-
         dist = {v: float('inf') for v in self.vertices}
         dist[start] = 0
-
         pq = [(0, start)]  # (khoảng cách, đỉnh)
 
         while pq:
@@ -225,61 +200,94 @@ class Algorithm:
             if current_dist > dist[u]:
                 continue
 
-            for (x, y), w in self.edges.items():
-                if x == u:
-                    v = y
-                elif not self.directed and y == u:
-                    v = x
-                else:
-                    continue
-
+            for v, w in self.get_neighbors(u):
                 alt = dist[u] + w
                 if alt < dist[v]:
                     dist[v] = alt
                     heapq.heappush(pq, (alt, v))
-
         return dist
 
-    #thuật toán prim
+    # thuật toán prim
     def prim(self, start):
+        if self.directed:
+            raise ValueError("Prim không áp dụng cho đồ thị có hướng")
         if start not in self.vertices:
             return None, 0, []
-
-        import heapq
-
+        visited = set([start])
         mst_edges = []
         total_weight = 0
-        order = [start]  # Thứ tự thêm đỉnh
-        visited = set([start])
-        edges = []
+        order = [start]
+        heap = []
 
-        # Thêm tất cả cạnh từ start vào heap
-        for (u, v), w in self.edges.items():
-            if u == start:
-                heapq.heappush(edges, (w, u, v))
-            elif v == start:
-                heapq.heappush(edges, (w, v, u))
+        # đưa cạnh kề với start vào heap
+        for neighbor, weight in self.get_neighbors(start):
+            heapq.heappush(heap, (weight, start, neighbor))
 
-        while edges and len(visited) < len(self.vertices):
-            w, u, v = heapq.heappop(edges)
+        while heap and len(visited) < len(self.vertices):
+            weight, u, v = heapq.heappop(heap)
+
             if v in visited:
                 continue
-            if u not in visited:
-                u, v = v, u  # Đảo để u đã visit, v mới
 
             visited.add(v)
+            mst_edges.append((u, v, weight))
+            total_weight += weight
             order.append(v)
-            mst_edges.append((u, v, w))
-            total_weight += w
 
-            # Thêm các cạnh mới từ v
-            for (x, y), ww in self.edges.items():
-                if x == v and y not in visited:
-                    heapq.heappush(edges, (ww, x, y))
-                elif y == v and x not in visited:
-                    heapq.heappush(edges, (ww, y, x))
-
+            # thêm cạnh mới từ v
+            for neighbor, w in self.get_neighbors(v):
+                if neighbor not in visited:
+                    heapq.heappush(heap, (w, v, neighbor))
         if len(visited) < len(self.vertices):
-            return None, 0, order  # Không liên thông
-
+            return None, 0, order
         return mst_edges, total_weight, order
+
+    # hàm mới
+    def dijkstra_and_bellman_ford_path(self, start, end):
+        if start not in self.vertices or end not in self.vertices:
+            return None, None
+        # Kiểm tra xem có cạnh âm không
+        has_negative = any(w < 0 for w in self.edges.values())
+        if has_negative:
+            # Dùng Bellman-Ford
+            distance = {v: float("inf") for v in self.vertices}
+            prev = {v: None for v in self.vertices}
+            distance[start] = 0
+            for _ in range(len(self.vertices) - 1):
+                for (u, v), w in self.edges.items():
+                    if distance[u] != float("inf") and distance[u] + w < distance[v]:
+                        distance[v] = distance[u] + w
+                        prev[v] = u
+            # Kiểm tra chu trình âm
+            for (u, v), w in self.edges.items():
+                if distance[u] != float("inf") and distance[u] + w < distance[v]:
+                    raise ValueError("Đồ thị có chu trình âm, không thể tìm đường đi ngắn nhất")
+        else:
+            # Dijkkstra
+            dist = {v: float('inf') for v in self.vertices}
+            prev = {v: None for v in self.vertices}
+            dist[start] = 0
+            pq = [(0, start)]
+
+            while pq:
+                current_dist, u = heapq.heappop(pq)
+                if u == end:
+                    break
+                if current_dist > dist[u]:
+                    continue
+                for v, w in self.get_neighbors(u):
+                    alt = dist[u] + w
+                    if alt < dist[v]:
+                        dist[v] = alt
+                        prev[v] = u
+                        heapq.heappush(pq, (alt, v))
+            distance = dist
+        if distance[end] == float("inf"):
+            return None, None
+        path = []
+        cur = end
+        while cur is not None:
+            path.append(cur)
+            cur = prev[cur]
+        path.reverse()
+        return path, distance[end]
