@@ -102,11 +102,8 @@ btn_add_edge.grid(row=3, column=0, columnspan=3,sticky="we", padx=5, pady=25, ip
 
 # Combobox chọn space (đồ thị)
 space_var = tk.StringVar()
-space_cb = ttk.Combobox(frame_add,
-                        textvariable=space_var,
-                        state="readonly",
-                        values=["graph_project"],
-                        width=22)
+space_cb = ttk.Combobox(frame_add, textvariable=space_var, state="readonly", width=22)
+space_cb['values'] = ()
 space_cb.grid(row=4, column=2, columnspan=3, padx=5, pady=5)
 btn_load_db = tk.Button(frame_add, text="Mở data", bg="yellow")
 btn_load_db.grid(row=4, column=0, columnspan=1,sticky="w", padx=5, pady=5, ipady=10)

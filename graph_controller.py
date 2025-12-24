@@ -9,7 +9,7 @@ class GraphController:
                  entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, entry_start, start_vertex_cb,
                  end_vertex_cb, space_var,
                  btn_find_path, btn_update, btn_move, btn_clear,
-                 space_cb, btn_load_db):  # Thêm các Entry + Button
+                 space_cb, btn_load_db):
         self.canvas = canvas
         self.graph_type_var = graph_type_var
         self.text_result = text_result
@@ -20,13 +20,13 @@ class GraphController:
         self.entry_weight = entry_weight  # Entry trọng số
         self.btn_add_edge = btn_add_edge  # Button thêm cạnh
         self.algo_var = algo_var  # Biến duyệt đồ thị
-        self.entry_start = entry_start
-        self.start_vertex_cb = start_vertex_cb  # Entry
-        self.end_vertex_cb = end_vertex_cb
-        self.btn_update = btn_update
-        self.btn_move = btn_move
-        self.btn_clear = btn_clear
-        self.btn_find_path = btn_find_path
+        self.entry_start = entry_start  # Đỉnh bắt đầu để duyệt toàn bộ bằng thuật toán
+        self.start_vertex_cb = start_vertex_cb  # entry bắt đầu tìm đường đi
+        self.end_vertex_cb = end_vertex_cb  # entry đỉnh đích tìm đường đi
+        self.btn_update = btn_update    # Update đồ thị khi click và điền thong tin vào entry đỉnh và trọng số
+        self.btn_move = btn_move    # Di chuyển khi click vào nút và kéo thả các đỉnh
+        self.btn_clear = btn_clear  # Xá toàn bộ đồ thị trên màng hình canvas
+        self.btn_find_path = btn_find_path  # nút tìm đường đi khi nhập đỉnh đầu và đỉnh đích
 
         self.move_mode = False
         self.selected_vertex = None  # Đỉnh đang được kéo
@@ -60,10 +60,11 @@ class GraphController:
 
     # Lưu dữ liệu
     def save_graph_config(self):
+        selected_space = self.space_var.get()
         session = NebulaDB.get_session()
         try:
             is_directed = self.graph_type_var.get() == "co_huong"
-            session.execute('USE graph_project;')  # Hoặc space hiện tại
+            session.execute(f'USE `{selected_space}`;') # Hoặc space hiện tại
             session.execute('INSERT VERTEX IF NOT EXISTS graph_config(is_directed) VALUES "config":(true);')
             session.execute(f'UPDATE VERTEX "config" OF graph_config SET is_directed = {str(is_directed).lower()};')
             self.text_result.insert("end", f"Đã lưu config đồ thị {'có hướng' if is_directed else 'vô hướng'}\n")
@@ -126,6 +127,8 @@ class GraphController:
             "end",
             f"Đã chuyển sang đồ thị {'có hướng' if is_directed else 'vô hướng'}\n"
         )
+        self.redraw_all()
+        self.show_matrix()
 
     def add_edge(self):
         self.clear_result()
@@ -232,6 +235,7 @@ class GraphController:
         self.entry_weight.delete(0, "end")
 
     def update_graph(self):
+        selected_space = self.space_var.get()
         self.clear_result()
         src = self.entry_src.get().strip()
         dst = self.entry_dst.get().strip()
@@ -243,7 +247,7 @@ class GraphController:
 
         session = NebulaDB.get_session()
         try:
-            session.execute('USE graph_project;')  # Giả sử dùng space mặc định
+            session.execute(f'USE `{selected_space}`;')  # Giả sử dùng space mặc định
         except:
             pass  # Offline mode
 
@@ -692,12 +696,13 @@ class GraphController:
                 spaces = []
                 for row in result.rows():
                     try:
-                        space_name = row.values()[0].get_sVal().decode('utf-8').strip('"')
+                        space_name = row.values()[0].as_string()
                         spaces.append(space_name)
                     except:
-                        pass
-                self.space_cb.configure(values=[])  # Clear trước
-                self.space_cb.configure(values=spaces)  # Set mới
+                        continue
+
+                self.space_cb['values'] = tuple(spaces)
+
                 if spaces:
                     self.space_var.set(spaces[0])
                     self.text_result.insert("end", f"ONLINE: Tìm thấy {len(spaces)} space: {', '.join(spaces)}\n")
@@ -706,10 +711,10 @@ class GraphController:
             else:
                 raise Exception("Query thất bại")
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi kết nối NebulaGraph: {e} - Chạy offline\n")
-            # Khi offline, set values giả để dùng tạm
-            self.space_cb.configure(values=["graph_project"])  # Chỉ 1 space giả
+            self.text_result.insert("end", f"Lỗi NebulaGraph: {e} - Chạy offline tạm thời\n")
+            self.space_cb['values'] = ("graph_project",)
             self.space_var.set("graph_project")
+
 
     def load_from_db(self):
         selected_space = self.space_var.get()
@@ -791,6 +796,59 @@ class GraphController:
         except Exception as e:
             self.text_result.insert("end", f"Lỗi load: {str(e)}\n")
             self.text_result.insert("end", "Chương trình vẫn chạy offline bình thường.\n")
+        for src, dst, weight in edges_data:
+            if self.graph.directed:
+                key = (src, dst)
+            else:
+                key = tuple(sorted([src, dst]))
+                self.graph.edges[key] = weight  # Thêm vào model (quan trọng cho thuật toán)
 
+            # Vẽ cạnh (copy từ add_edge)
+            v1 = self.graph.vertices[src]
+            v2 = self.graph.vertices[dst]
+            r = 20
+            if self.graph.directed:
+                dx = v2.x - v1.x
+                dy = v2.y - v1.y
+                dist = math.hypot(dx, dy) or 1
+                offset_x = dx / dist * r
+                offset_y = dy / dist * r
+                self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
+                                        v2.x - offset_x, v2.y - offset_y,
+                                        fill="black", width=3,
+                                        arrow=tk.LAST, arrowshape=(16, 20, 6))
+            else:
+                self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
+
+            # Vẽ trọng số
+            mid_x = (v1.x + v2.x) / 2
+            mid_y = (v1.y + v2.y) / 2
+            weight_str = str(weight)
+            temp_text = self.canvas.create_text(mid_x, mid_y - 12, text=weight_str, font=("Arial", 12, "bold"))
+            bbox = self.canvas.bbox(temp_text)
+            if bbox:
+                padding = 5
+                self.canvas.create_rectangle(bbox[0] - padding, bbox[1] - padding,
+                                             bbox[2] + padding, bbox[3] + padding,
+                                             fill="white", outline="gray", width=1)
+            self.canvas.delete(temp_text)
+            self.canvas.create_text(mid_x, mid_y - 12, text=weight_str,
+                                    font=("Arial", 12, "bold"), fill="red")
+
+    def rebuild_edges_on_type_change(self):
+        old_edges = list(self.graph.edges.items())
+        new_edges = {}
+
+        if self.graph.directed:
+            # vô hướng → có hướng
+            for (u, v), w in old_edges:
+                new_edges[(u, v)] = w
+                new_edges[(v, u)] = w
+        else:
+            # có hướng → vô hướng
+            for (u, v), w in old_edges:
+                key = tuple(sorted([u, v]))
+                new_edges[key] = w
+        self.graph.edges = new_edges
     def clear_result(self):
         self.text_result.delete("1.0", "end")
