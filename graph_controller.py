@@ -1,6 +1,5 @@
 from graph_model import Graph, Algorithm
 from database import NebulaDB
-from nebula3.common.ttypes import Value
 import tkinter as tk
 import math
 import random
@@ -157,84 +156,32 @@ class GraphController:
             self.text_result.insert("end", "Không hỗ trợ cạnh khuyên (self-loop)!\n")
             return
 
-        # Thêm cạnh vào model
-        if self.graph.directed:
-            self.graph.edges[(src, dst)] = weight
-        else:
-            key = tuple(sorted([src, dst]))
-            self.graph.edges[key] = weight
+        # === 1. THÊM VÀO MODEL (phải gọi đúng add_edge của Graph) ===
+        self.graph.add_edge(src, dst, weight)  # <-- Đảm bảo hàm này lưu đúng 2 chiều nếu vô hướng
 
-        # === VẼ CẠNH LÊN CANVAS ===
-        v1 = self.graph.vertices[src]
-        v2 = self.graph.vertices[dst]
-
-        # Vẽ đường thẳng có hướng và vô hw
-        r = 20  # bán kính đỉnh
-        dx = v2.x - v1.x
-        dy = v2.y - v1.y
-        dist = math.hypot(dx, dy)
-        if dist == 0:
-            dist = 1
-        offset_x = dx / dist * r
-        offset_y = dy / dist * r
-        if self.graph.directed:
-            self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
-                                    v2.x - offset_x, v2.y - offset_y,
-                                    fill="black", width=3,
-                                    arrow=tk.LAST, arrowshape=(16, 20, 6))
-        else:
-            self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
-        # === VẼ TRỌNG SỐ CHÍNH GIỮA CẠNH ===
-        mid_x = (v1.x + v2.x) / 2
-        mid_y = (v1.y + v2.y) / 2
-
-        # Lệch nhẹ lên trên để tránh chồng lên đường thẳng
-        offset_y = -12
-
-        weight_str = str(weight)
-
-        # Tạo nền trắng (hình chữ nhật bo tròn nhẹ)
-        bbox = self.canvas.bbox(
-            self.canvas.create_text(mid_x, mid_y + offset_y, text=weight_str, font=("Arial", 12, "bold")))
-        if bbox:  # Nếu bbox hợp lệ
-            padding = 5
-            self.canvas.create_rectangle(
-                bbox[0] - padding, bbox[1] - padding,
-                bbox[2] + padding, bbox[3] + padding,
-                fill="white", outline="gray", width=1
-            )
-
-        # Vẽ chữ đỏ lên trên nền trắng
-        self.canvas.create_text(
-            mid_x, mid_y + offset_y,
-            text=weight_str,
-            font=("Arial", 12, "bold"),
-            fill="red",
-            anchor="center"
-        )
-
-        # === LƯU VÀO NEBULAGRAPH (vô hướng: insert 2 chiều) Danh sách kề ===
+        # === 2. LƯU VÀO NEBULA DB ===
         session = NebulaDB.get_session()
         try:
-            # Insert cạnh cả hai chiều
             if self.graph.directed:
                 session.execute(f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});')
             else:
                 session.execute(f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});')
                 session.execute(f'INSERT EDGE connect(weight) VALUES "{dst}"->"{src}":({weight});')
-
-            self.text_result.insert("end", f"Đã thêm cạnh {src} — {dst} (trọng số {weight})\n")
-            self.text_result.see("end")
+            self.text_result.insert("end", f"Đã thêm cạnh {src} → {dst} (trọng số {weight}) và lưu vào DB\n")
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu NebulaGraph: {str(e)}\n")
+            self.text_result.insert("end", f"Lỗi lưu DB: {str(e)}\n")
+            # Nếu lưu DB lỗi → vẫn giữ model để người dùng thao tác local
+            # Không return → vẫn vẽ
 
-        # Cập nhật ma trận kề
+        # === 3. VẼ LẠI TOÀN BỘ ĐỒ THỊ ===
+        self.redraw_all()
         self.show_matrix()
 
-        # Xóa ô nhập sau khi thêm thành công
+        # === 4. Xóa input ===
         self.entry_src.delete(0, "end")
         self.entry_dst.delete(0, "end")
         self.entry_weight.delete(0, "end")
+        print("Edges sau add:", self.graph.edges)  # thêm tạm vào cuối add_edge
 
     def update_graph(self):
         selected_space = self.space_var.get()
@@ -378,27 +325,39 @@ class GraphController:
         self.canvas.delete("all")
         for vid in self.graph.vertices:
             self.draw_vertex(vid)
+
+        drawn = set()  # tránh vẽ chồng vô hướng
         for (u, v), w in self.graph.edges.items():
+            key = tuple(sorted([u, v]))
+            if key in drawn:
+                continue
+            drawn.add(key)
+
             v1 = self.graph.vertices[u]
             v2 = self.graph.vertices[v]
+
+            # Vẽ cạnh (luôn từ u → v)
+            r = 20
+            dx = v2.x - v1.x
+            dy = v2.y - v1.y
+            dist = math.hypot(dx, dy) or 1
+            offset_x = dx / dist * r
+            offset_y = dy / dist * r
+
+            if self.graph.directed:
+                # Có hướng: vẽ mũi tên theo hướng có trong model
+                if (u, v) in self.graph.edges:
+                    self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
+                                            v2.x - offset_x, v2.y - offset_y,
+                                            fill="black", width=3,
+                                            arrow=tk.LAST, arrowshape=(16, 20, 6))
+            else:
+                # Vô hướng: vẽ đường thẳng
+                self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
+
+            # Vẽ trọng số
             mid_x = (v1.x + v2.x) / 2
             mid_y = (v1.y + v2.y) / 2
-            if self.graph.directed:
-                r = 20  # bán kính đỉnh
-                dx = v2.x - v1.x
-                dy = v2.y - v1.y
-                dist = math.hypot(dx, dy)
-                if dist == 0:
-                    dist = 1
-                offset_x = dx / dist * r
-                offset_y = dy / dist * r
-
-                self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
-                                        v2.x - offset_x, v2.y - offset_y,
-                                        fill="black", width=3,
-                                        arrow=tk.LAST, arrowshape=(16, 20, 6))
-            else:
-                self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
             offset_y = -12
             weight_str = str(w)
             temp_text = self.canvas.create_text(mid_x, mid_y + offset_y, text=weight_str, font=("Arial", 12, "bold"))

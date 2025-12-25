@@ -28,12 +28,10 @@ class Graph:  # Lớp lưu tạm thời đồ thị
         self.vertices[vid] = Vertex(vid, x, y)
 
     # Thêm cạnh
-    def add_edge(self, src, dst, weight=1):
-        if self.directed:
-            self.edges[(src, dst)] = weight
-        else:
-            key = tuple(sorted([src, dst]))
-            self.edges[key] = weight
+    def add_edge(self, src, dst, weight):
+        self.edges[(src, dst)] = weight
+        if not self.directed:
+            self.edges[(dst, src)] = weight
 
     # Ma trận kề
     def adjacency_matrix(self):
