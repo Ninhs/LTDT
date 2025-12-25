@@ -536,30 +536,30 @@ class GraphController:
 
     # duyệt bellman
     def run_bellman_ford(self):
-        if not self.graph.directed:
-            self.text_result.insert("end", "Bellman-Ford chỉ áp dụng cho đồ thị có hướng!\n")
+        self.clear_result()
+        start = self.entry_start.get().strip()
+        if not start:
+            self.text_result.insert("end", "Vui lòng nhập đỉnh bắt đầu!\n")
+            return
+        if start not in self.graph.vertices:
+            self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ!\n")
             return
 
-        self.clear_result()
-        start = self.entry_start.get()
-        if start not in self.graph.vertices:
-            self.text_result.insert("end", "Đỉnh bắt đầu không hợp lệ\n")
-            return
-        algorithm = Algorithm(directed=self.graph.directed)
-        algorithm.edges = {}
-        vertices_list = list(self.graph.vertices.keys())
-        # Tạo danh sách cạnh dạng (u, v, w), hỗ trợ vô hướng
-        algorithm.edges = self.graph.edges.copy()
-        # Tạo instance Algorithm và gán edges
-        distances = algorithm.bellman_ford(vertices_list, start)
+        algo = Algorithm()
+        algo.edges = self.graph.edges
+        algo.directed = self.graph.directed  # vẫn giữ để model đúng
+        algo.vertices = list(self.graph.vertices.keys())
+
+        distances = algo.bellman_ford(algo.vertices, start)
 
         self.text_result.delete("1.0", "end")
         if distances is None:
-            self.text_result.insert("end", "Đồ thị chứa chu trình âm!\n")
+            self.text_result.insert("end", "Đồ thị chứa chu trình âm đạt được từ đỉnh bắt đầu!\n")
         else:
             self.text_result.insert("end", f"Bellman-Ford từ đỉnh {start}:\n")
-            for v, d in distances.items():
-                dist_str = "∞" if d == float('inf') else str(d)
+            for v in sorted(distances.keys()):
+                d = distances[v]
+                dist_str = "∞" if d == float("inf") else str(d)
                 self.text_result.insert("end", f"Đỉnh {v}: {dist_str}\n")
 
     # duyệt dijkstra

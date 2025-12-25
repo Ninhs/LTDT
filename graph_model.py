@@ -173,17 +173,27 @@ class Algorithm:
 
     # duyệt bellman
     def bellman_ford(self, vertices, start):
-        if not self.directed:
-            raise ValueError("Bellman-Ford chỉ áp dụng cho đồ thị có hướng")
+        # Khởi tạo khoảng cách
         distance = {v: float("inf") for v in vertices}
         distance[start] = 0
-        for _ in range(len(vertices) - 1):
+
+        # Relax tất cả các cạnh |V|-1 lần
+        for i in range(len(vertices) - 1):
+            updated = False
             for (u, v), w in self.edges.items():
                 if distance[u] != float("inf") and distance[u] + w < distance[v]:
                     distance[v] = distance[u] + w
+                    updated = True
+            # Tối ưu: nếu không cập nhật gì → dừng sớm
+            if not updated:
+                break
+
+        # Kiểm tra chu trình âm
         for (u, v), w in self.edges.items():
             if distance[u] != float("inf") and distance[u] + w < distance[v]:
-                return None
+                # Có chu trình âm đạt được từ start
+                return None  # Báo có chu trình âm
+
         return distance
 
     # thuật toán dijkistra
