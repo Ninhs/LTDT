@@ -29,7 +29,10 @@ class Graph:  # Lớp lưu tạm thời đồ thị
 
     # Thêm cạnh
     def add_edge(self, src, dst, weight):
+        # Luôn lưu chiều người dùng nhập (ưu tiên khi vẽ)
         self.edges[(src, dst)] = weight
+
+        # Nếu vô hướng → lưu chiều ngược
         if not self.directed:
             self.edges[(dst, src)] = weight
 

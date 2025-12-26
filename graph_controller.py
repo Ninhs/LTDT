@@ -60,13 +60,20 @@ class GraphController:
 
     # Lưu dữ liệu
     def save_graph_config(self):
-        selected_space = self.space_var.get()
-        session = NebulaDB.get_session()
+        session = self.connect_graph_space()
+        if session is None:
+            return
+
         try:
-            is_directed = self.graph_type_var.get() == "co_huong"
-            session.execute(f'USE `{selected_space}`;') # Hoặc space hiện tại
-            session.execute('INSERT VERTEX IF NOT EXISTS graph_config(is_directed) VALUES "config":(true);')
-            session.execute(f'UPDATE VERTEX "config" OF graph_config SET is_directed = {str(is_directed).lower()};')
+            is_directed = self.graph.directed
+            session.execute('''
+                INSERT VERTEX IF NOT EXISTS graph_config(is_directed)
+                VALUES "config":(false);
+            ''')
+            session.execute(f'''
+                UPDATE VERTEX "config" ON graph_config
+                SET is_directed = {is_directed}
+            ''')
             self.text_result.insert("end", f"Đã lưu config đồ thị {'có hướng' if is_directed else 'vô hướng'}\n")
         except Exception as e:
             self.text_result.insert("end", f"Lỗi lưu config: {e}\n")
@@ -121,16 +128,6 @@ class GraphController:
         else:
             self.text_result.insert("end", "Đã tắt chế độ thêm cạnh\n")
 
-    def on_graph_type_change(self, *args):
-        is_directed = (self.graph_type_var.get() == "co_huong")
-        self.graph.directed = is_directed
-        self.text_result.insert(
-            "end",
-            f"Đã chuyển sang đồ thị {'có hướng' if is_directed else 'vô hướng'}\n"
-        )
-        self.redraw_all()
-        self.show_matrix()
-
     def add_edge(self):
         self.clear_result()
         src = self.entry_src.get().strip()
@@ -156,36 +153,67 @@ class GraphController:
             self.text_result.insert("end", "Không hỗ trợ cạnh khuyên (self-loop)!\n")
             return
 
-        # === 1. THÊM VÀO MODEL (phải gọi đúng add_edge của Graph) ===
-        self.graph.add_edge(src, dst, weight)  # <-- Đảm bảo hàm này lưu đúng 2 chiều nếu vô hướng
+        # === 1. THÊM VÀO MODEL ===
+        self.graph.add_edge(src, dst, weight)
 
-        # === 2. LƯU VÀO NEBULA DB ===
-        session = NebulaDB.get_session()
+        # === 2. LƯU VÀO NEBULA (THEO HƯỚNG / VÔ HƯỚNG) ===
         try:
-            if self.graph.directed:
-                session.execute(f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});')
-            else:
-                session.execute(f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});')
-                session.execute(f'INSERT EDGE connect(weight) VALUES "{dst}"->"{src}":({weight});')
-            self.text_result.insert("end", f"Đã thêm cạnh {src} → {dst} (trọng số {weight}) và lưu vào DB\n")
+            self.save_edge_to_db(
+                src,
+                dst,
+                weight,
+                directed=self.graph.directed
+            )
+            self.text_result.insert(
+                "end",
+                f"Đã thêm cạnh {src} {'→' if self.graph.directed else '↔'} {dst} (w={weight})\n"
+            )
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu DB: {str(e)}\n")
-            # Nếu lưu DB lỗi → vẫn giữ model để người dùng thao tác local
-            # Không return → vẫn vẽ
+            self.text_result.insert("end", f"Lỗi lưu DB: {e}\n")
 
-        # === 3. VẼ LẠI TOÀN BỘ ĐỒ THỊ ===
+        # === 3. VẼ LẠI ===
         self.redraw_all()
         self.show_matrix()
 
-        # === 4. Xóa input ===
+        # === 4. CLEAR INPUT ===
         self.entry_src.delete(0, "end")
         self.entry_dst.delete(0, "end")
         self.entry_weight.delete(0, "end")
-        print("Edges sau add:", self.graph.edges)  # thêm tạm vào cuối add_edge
+
+        print("Edges sau add:", self.graph.edges)
+
+    def on_graph_type_change(self, *args):
+        new_directed = (self.graph_type_var.get() == "co_huong")
+
+        if new_directed != self.graph.directed:
+            self.rebuild_edges_when_change_direction(new_directed)
+
+        self.graph.directed = new_directed
+
+        self.text_result.insert("end", f"Đã chuyển sang đồ thị {'có hướng' if new_directed else 'vô hướng'}\n")
+        self.redraw_all()
+        self.show_matrix()
+        self.save_graph_config()
+
+    def rebuild_edges_when_change_direction(self, new_directed):
+        new_edges = {}
+
+        for (u, v), w in self.graph.edges.items():
+            if new_directed:
+                # Sang có hướng: giữ chiều gốc (ưu tiên chiều người dùng nhập)
+                if (u, v) not in new_edges:
+                    new_edges[(u, v)] = w
+            else:
+                # Sang vô hướng: lưu 2 chiều
+                new_edges[(u, v)] = w
+                new_edges[(v, u)] = w
+
+        self.graph.edges = new_edges
 
     def update_graph(self):
         selected_space = self.space_var.get()
         self.clear_result()
+
         src = self.entry_src.get().strip()
         dst = self.entry_dst.get().strip()
         weight_str = self.entry_weight.get().strip()
@@ -194,11 +222,12 @@ class GraphController:
             self.text_result.insert("end", "Vui lòng nhập ít nhất đỉnh đầu!\n")
             return
 
+        # Lấy session (có thể offline)
         session = NebulaDB.get_session()
         try:
-            session.execute(f'USE `{selected_space}`;')  # Giả sử dùng space mặc định
+            session.execute(f'USE `{selected_space}`;')
         except:
-            pass  # Offline mode
+            pass
 
         # XÓA ĐỈNH (và tất cả cạnh liên quan)
         if not dst and not weight_str:
@@ -206,64 +235,101 @@ class GraphController:
                 self.text_result.insert("end", f"Đỉnh {src} không tồn tại!\n")
                 return
 
-            # Xóa cạnh trong model
-            edges_to_delete = [k for k in list(self.graph.edges.keys()) if src in k]
-            for k in edges_to_delete:
-                del self.graph.edges[k]
+            # Xóa tất cả cạnh liên quan trong MODEL
+            edges_to_delete = [
+                e for e in list(self.graph.edges.keys())
+                if src == e[0] or src == e[1]
+            ]
+            for e in edges_to_delete:
+                del self.graph.edges[e]
 
-            # XÓA ĐỒNG BỘ NEBULA
+            # Xóa trong Nebula
             try:
                 session.execute(f'DELETE VERTEX "{src}";')
-                self.text_result.insert("end", f"Xóa đỉnh {src} khỏi NebulaGraph\n")
             except:
                 pass
 
             del self.graph.vertices[src]
-            self.text_result.insert("end", f"Đã xóa đỉnh {src} và tất cả cạnh liên quan\n")
+            self.text_result.insert("end", f"Đã xóa đỉnh {src} và toàn bộ cạnh liên quan\n")
+
 
         # XÓA/SỬA CẠNH
         elif dst:
-            if self.graph.directed:
-                key = (src, dst)
-            else:
-                key = tuple(sorted([src, dst]))
-
-            if key not in self.graph.edges:
-                self.text_result.insert("end", f"Không tìm thấy cạnh {src}-{dst}\n")
+            if src not in self.graph.vertices or dst not in self.graph.vertices:
+                self.text_result.insert("end", "Một trong hai đỉnh không tồn tại!\n")
                 return
 
-            if weight_str:  # SỬA TRỌNG SỐ
+            if weight_str:
                 try:
                     new_weight = float(weight_str)
-                    self.graph.edges[key] = new_weight
-
-                    # SỬA TRONG NEBULA (cả 2 chiều nếu vô hướng)
-                    try:
-                        session.execute(f'UPDATE EDGE connect "{src}" -> "{dst}" SET weight = {new_weight};')
-                        if not self.graph.directed:
-                            session.execute(f'UPDATE EDGE connect "{dst}" -> "{src}" SET weight = {new_weight};')
-                        self.text_result.insert("end", f"Đã sửa trọng số {src}-{dst} → {new_weight} trong DB\n")
-                    except:
-                        pass
-                    self.text_result.insert("end", f"Đã sửa trọng số cạnh {src}-{dst} thành {new_weight}\n")
                 except ValueError:
                     self.text_result.insert("end", "Trọng số mới phải là số!\n")
                     return
-            else:  # XÓA CẠNH
-                del self.graph.edges[key]
 
-                # XÓA TRONG NEBULA
+                if (src, dst) not in self.graph.edges:
+                    self.text_result.insert("end", f"Không tồn tại cạnh {src} → {dst}\n")
+                    return
+
+                # MODEL
+                self.graph.edges[(src, dst)] = new_weight
+                if not self.graph.directed:
+                    self.graph.edges[(dst, src)] = new_weight
+
+                # NEBULA
                 try:
-                    session.execute(f'DELETE EDGE connect "{src}" -> "{dst}";')
+                    session.execute(
+                        f'UPDATE EDGE connect "{src}" -> "{dst}" SET weight = {new_weight};'
+                    )
                     if not self.graph.directed:
-                        session.execute(f'DELETE EDGE connect "{dst}" -> "{src}";')
-                    self.text_result.insert("end", f"Đã xóa cạnh {src}-{dst} khỏi NebulaGraph\n")
+                        session.execute(
+                            f'UPDATE EDGE connect "{dst}" -> "{src}" SET weight = {new_weight};'
+                        )
                 except:
                     pass
-                self.text_result.insert("end", f"Đã xóa cạnh {src}-{dst}\n")
 
+                self.text_result.insert(
+                    "end",
+                    f"Đã sửa trọng số cạnh {src} {'→' if self.graph.directed else '↔'} {dst} = {new_weight}\n"
+                )
+
+
+            else:
+
+                if (src, dst) not in self.graph.edges:
+                    self.text_result.insert("end", f"Không tồn tại cạnh {src} → {dst}\n")
+
+                    return
+
+                # MODEL
+
+                del self.graph.edges[(src, dst)]
+
+                if not self.graph.directed:
+                    del self.graph.edges[(dst, src)]
+
+                # NEBULA
+
+                try:
+
+                    session.execute(f'DELETE EDGE connect "{src}" -> "{dst}";')
+
+                    if not self.graph.directed:
+                        session.execute(f'DELETE EDGE connect "{dst}" -> "{src}";')
+
+                except:
+
+                    pass
+
+                self.text_result.insert(
+
+                    "end",
+
+                    f"Đã xóa cạnh {src} {'→' if self.graph.directed else '↔'} {dst}\n"
+
+                )
         self.redraw_all()
         self.show_matrix()
+
         self.entry_src.delete(0, "end")
         self.entry_dst.delete(0, "end")
         self.entry_weight.delete(0, "end")
@@ -323,20 +389,29 @@ class GraphController:
 
     def redraw_all(self):
         self.canvas.delete("all")
+
         for vid in self.graph.vertices:
             self.draw_vertex(vid)
 
-        drawn = set()  # tránh vẽ chồng vô hướng
+        drawn = set()
+
         for (u, v), w in self.graph.edges.items():
             key = tuple(sorted([u, v]))
             if key in drawn:
                 continue
             drawn.add(key)
 
-            v1 = self.graph.vertices[u]
-            v2 = self.graph.vertices[v]
+            # Ưu tiên chiều người dùng nhập (chiều có key gốc)
+            if (u, v) in self.graph.edges:
+                from_vid = u
+                to_vid = v
+            else:
+                from_vid = v
+                to_vid = u
 
-            # Vẽ cạnh (luôn từ u → v)
+            v1 = self.graph.vertices[from_vid]
+            v2 = self.graph.vertices[to_vid]
+
             r = 20
             dx = v2.x - v1.x
             dy = v2.y - v1.y
@@ -345,14 +420,13 @@ class GraphController:
             offset_y = dy / dist * r
 
             if self.graph.directed:
-                # Có hướng: vẽ mũi tên theo hướng có trong model
-                if (u, v) in self.graph.edges:
-                    self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
-                                            v2.x - offset_x, v2.y - offset_y,
-                                            fill="black", width=3,
-                                            arrow=tk.LAST, arrowshape=(16, 20, 6))
+                # Có hướng: vẽ mũi tên từ from_vid → to_vid (chiều người dùng nhập)
+                self.canvas.create_line(v1.x + offset_x, v1.y + offset_y,
+                                        v2.x - offset_x, v2.y - offset_y,
+                                        fill="black", width=3,
+                                        arrow=tk.LAST, arrowshape=(16, 20, 6))
             else:
-                # Vô hướng: vẽ đường thẳng
+                # Vô hướng: vẽ thẳng
                 self.canvas.create_line(v1.x, v1.y, v2.x, v2.y, fill="black", width=3)
 
             # Vẽ trọng số
@@ -360,6 +434,7 @@ class GraphController:
             mid_y = (v1.y + v2.y) / 2
             offset_y = -12
             weight_str = str(w)
+
             temp_text = self.canvas.create_text(mid_x, mid_y + offset_y, text=weight_str, font=("Arial", 12, "bold"))
             bbox = self.canvas.bbox(temp_text)
             if bbox:
@@ -818,48 +893,54 @@ class GraphController:
         try:
             session = NebulaDB.get_session()
             if session is None:
-                raise Exception("Session rỗng")
+                raise Exception("Session None")
 
-            space = "graph_project"
-            result = session.execute(f"USE {space};")
-
+            # Chỉ USE, không tạo mới
+            result = session.execute("USE graph_project;")
             if not result.is_succeeded():
-                raise Exception("Không USE được space")
+                raise Exception(f"USE space thất bại: {result.error_msg()}")
 
-            self.space_var.set(space)
-            self.text_result.insert("end", f"ONLINE: Đã kết nối space\n")
-
+            self.space_var.set("graph_project")
+            self.text_result.insert("end", "ONLINE: Kết nối NebulaGraph thành công (space sẵn có)!\n")
             return session
 
         except Exception as e:
-            self.text_result.insert(
-                "end",
-                f"OFFLINE: Không kết nối được space graph_project ({e})\n"
-            )
+            self.text_result.insert("end", f"OFFLINE: Không kết nối NebulaGraph ({str(e)})\n")
             return None
 
     def save_vertex_to_db(self, vid, x, y):
-        if not self.connect_graph_space():
+        session = self.connect_graph_space()
+        if session is None:
             return
 
         try:
-            session = NebulaDB.get_session()
-            session.execute(
-                f'INSERT VERTEX point(x, y) VALUES "{vid}":({x}, {y});'
-            )
+            session.execute(f'''
+                INSERT VERTEX IF NOT EXISTS point(x, y)
+                VALUES "{vid}":({x}, {y});
+            ''')
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu đỉnh {vid}: {e}\n")
+            self.text_result.insert("end", f"Lỗi lưu tọa độ đỉnh {vid}: {e}\n")
 
-    def save_edge_to_db(self, src, dst, weight):
-        if not self.connect_graph_space():
+    def save_edge_to_db(self, src, dst, weight, directed=True):
+        session = self.connect_graph_space()
+        if session is None:
             return
 
         try:
-            session = NebulaDB.get_session()
-            session.execute(
-                f'INSERT EDGE connect(weight) VALUES "{src}"->"{dst}":({weight});'
-            )
+            if self.graph.directed:
+                session.execute(f'''
+                    INSERT EDGE IF NOT EXISTS connect(weight)
+                    VALUES "{src}"->"{dst}":({weight});
+                ''')
+            else:
+                session.execute(f'''
+                    INSERT EDGE IF NOT EXISTS connect(weight)
+                    VALUES "{src}"->"{dst}":({weight}),
+                           "{dst}"->"{src}":({weight});
+                ''')
+            self.text_result.insert("end", f"Đã thêm cạnh {src} → {dst} (trọng số {weight}) và lưu vào DB\n")
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu cạnh {src}->{dst}: {e}\n")
+            self.text_result.insert("end", f"Lỗi lưu DB: {str(e)}\n")
+
     def clear_result(self):
         self.text_result.delete("1.0", "end")
