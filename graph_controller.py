@@ -9,7 +9,7 @@ class GraphController:
                  entry_src, entry_dst, entry_weight, btn_add_edge, algo_var, entry_start, start_vertex_cb,
                  end_vertex_cb, space_var,
                  btn_find_path, btn_update, btn_move, btn_clear,
-                 space_cb, btn_load_db):
+                 space_cb):
         self.canvas = canvas
         self.graph_type_var = graph_type_var
         self.text_result = text_result
@@ -38,7 +38,7 @@ class GraphController:
 
         self.space_cb = space_cb
         self.space_var = space_var
-        self.btn_load_db = btn_load_db
+        # self.btn_load_db = btn_load_db
 
         # Load danh sách space khi khởi động
         self.refresh_space_list()
@@ -53,7 +53,7 @@ class GraphController:
 
         # Bind
         self.btn_move.config(command=self.enable_move_mode)
-        self.btn_load_db.config(command=self.load_from_db)
+        # self.btn_load_db.config(command=self.load_from_db)
         self.btn_update.config(command=self.update_graph)
         self.btn_clear.config(command=self.clear_canvas)
         self.btn_add_edge.config(command=self.add_edge)
@@ -65,18 +65,57 @@ class GraphController:
             return
 
         try:
+            # 1. Lưu cấu hình đồ thị (có hướng hay không)
             is_directed = self.graph.directed
+
             session.execute('''
                 INSERT VERTEX IF NOT EXISTS graph_config(is_directed)
                 VALUES "config":(false);
             ''')
             session.execute(f'''
-                UPDATE VERTEX "config" ON graph_config
-                SET is_directed = {is_directed}
+                UPDATE VERTEX "config" 
+                SET graph_config.is_directed = {str(is_directed).lower()};
             ''')
             self.text_result.insert("end", f"Đã lưu config đồ thị {'có hướng' if is_directed else 'vô hướng'}\n")
+
+            # 2. Lưu tất cả các đỉnh (vertices)
+            self.text_result.insert("end", "Đang lưu các đỉnh vào database...\n")
+
+            if hasattr(self.graph, 'vertices') and self.graph.vertices:
+                for vid, vertex_obj in self.graph.vertices.items():
+                    # vertex_obj là instance của class Vertex → truy cập .x và .y
+                    x = vertex_obj.x
+                    y = vertex_obj.y
+                    self.save_vertex_to_db(vid, x, y)
+            else:
+                self.text_result.insert("end", "Không có đỉnh nào để lưu.\n")
+
+            # 3. Lưu tất cả các cạnh (edges)
+            self.text_result.insert("end", "Đang lưu các cạnh vào database...\n")
+
+            if hasattr(self.graph, 'edges') and self.graph.edges:
+                # Với đồ thị vô hướng: mỗi cạnh được lưu 2 lần (src→dst và dst→src)
+                # Ta chỉ cần duyệt một nửa để tránh lưu trùng (tùy bạn muốn)
+                processed = set()
+                for (src, dst), weight in self.graph.edges.items():
+                    # Để tránh lưu 2 lần cạnh vô hướng
+                    edge_key = tuple(sorted([src, dst]))
+                    if edge_key in processed:
+                        continue
+
+                    if is_directed:
+                        self.save_edge_to_db(src, dst, weight, directed=True)
+                    else:
+                        # Lưu với directed=False → hàm save_edge_to_db sẽ tự xử lý cả 2 chiều
+                        self.save_edge_to_db(src, dst, weight, directed=False)
+                        processed.add(edge_key)
+            else:
+                self.text_result.insert("end", "Không có cạnh nào để lưu.\n")
+
+            self.text_result.insert("end", "Đã lưu toàn bộ đồ thị (đỉnh + cạnh + config) vào database thành công!\n")
+
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu config: {e}\n")
+            self.text_result.insert("end", f"Lỗi khi lưu toàn bộ đồ thị: {e}\n")
 
     def enable_add_vertex(self):
         self.clear_result()
@@ -91,19 +130,24 @@ class GraphController:
     def add_vertex(self, event):
         vid = str(self.vertex_count + 1)
         x, y = event.x, event.y
+
+        # Thêm đỉnh vào đồ thị nội bộ (cấu trúc dữ liệu của bạn)
         self.graph.add_vertex(vid, x, y)
+
+        # Tăng bộ đếm đỉnh
         self.vertex_count += 1
+
+        # Vẽ đỉnh lên giao diện
         self.draw_vertex(vid)
+
+        # Cập nhật ma trận kề (nếu có)
         self.show_matrix()
+
+        # === DUY NHẤT MỘT LỜI GỌI: LƯU VÀO DATABASE ===
         self.save_vertex_to_db(vid, x, y)
 
-        # LƯU TỌA ĐỘ VÀO NEBULA
-        session = NebulaDB.get_session()
-        try:
-            session.execute(f'INSERT VERTEX IF NOT EXISTS point(x, y) VALUES "{vid}":({x}, {y});')
-            self.text_result.insert("end", f"Đã thêm đỉnh {vid} tại ({x}, {y}) và lưu tọa độ vào DB\n")
-        except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu tọa độ đỉnh: {e}\n")
+        # Thông báo thêm đỉnh (không cần lặp lại thông báo lưu DB vì đã có trong save_vertex_to_db)
+        self.text_result.insert("end", f"Đã thêm đỉnh {vid} tại tọa độ ({x}, {y})\n")
 
     def draw_vertex(self, vid):
         v = self.graph.vertices[vid]
@@ -911,15 +955,31 @@ class GraphController:
     def save_vertex_to_db(self, vid, x, y):
         session = self.connect_graph_space()
         if session is None:
+            self.text_result.insert("end", "Lỗi: Không thể kết nối đến database NebulaGraph\n")
             return
 
         try:
+            # Thử INSERT nếu chưa tồn tại
             session.execute(f'''
                 INSERT VERTEX IF NOT EXISTS point(x, y)
                 VALUES "{vid}":({x}, {y});
             ''')
+            self.text_result.insert("end", f"Đã thêm đỉnh {vid} tại ({x}, {y}) vào database\n")
+
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu tọa độ đỉnh {vid}: {e}\n")
+            error_str = str(e).lower()
+            # Nếu đỉnh đã tồn tại → cập nhật tọa độ
+            if "duplicate" in error_str or "exists" in error_str or "conflict" in error_str:
+                try:
+                    session.execute(f'''
+                        UPDATE VERTEX "{vid}" 
+                        SET point.x = {x}, point.y = {y};
+                    ''')
+                    self.text_result.insert("end", f"Đã cập nhật tọa độ đỉnh {vid} → ({x}, {y}) trong database\n")
+                except Exception as update_e:
+                    self.text_result.insert("end", f"Lỗi cập nhật đỉnh {vid}: {update_e}\n")
+            else:
+                self.text_result.insert("end", f"Lỗi lưu đỉnh {vid} vào database: {e}\n")
 
     def save_edge_to_db(self, src, dst, weight, directed=True):
         session = self.connect_graph_space()
@@ -927,20 +987,52 @@ class GraphController:
             return
 
         try:
-            if self.graph.directed:
-                session.execute(f'''
-                    INSERT EDGE IF NOT EXISTS connect(weight)
-                    VALUES "{src}"->"{dst}":({weight});
-                ''')
+            if self.graph.directed or not directed:
+                # Chỉ thêm một chiều nếu có hướng hoặc yêu cầu không đối xứng
+                edges_to_insert = [f'"{src}" -> "{dst}"@0 :({weight})']
             else:
-                session.execute(f'''
-                    INSERT EDGE IF NOT EXISTS connect(weight)
-                    VALUES "{src}"->"{dst}":({weight}),
-                           "{dst}"->"{src}":({weight});
-                ''')
-            self.text_result.insert("end", f"Đã thêm cạnh {src} → {dst} (trọng số {weight}) và lưu vào DB\n")
+                # Vô hướng: thêm cả hai chiều
+                edges_to_insert = [
+                    f'"{src}" -> "{dst}"@0 :({weight})',
+                    f'"{dst}" -> "{src}"@0 :({weight})'
+                ]
+
+            insert_query = '''
+                INSERT EDGE IF NOT EXISTS connect(weight) VALUES {}
+            '''.format(", ".join(edges_to_insert))
+
+            session.execute(insert_query)
+
+            direction = "→" if directed else "↔"
+            self.text_result.insert("end", f"Đã lưu/cập nhật cạnh {src} {direction} {dst} (trọng số {weight})\n")
+
         except Exception as e:
-            self.text_result.insert("end", f"Lỗi lưu DB: {str(e)}\n")
+            error_str = str(e).lower()
+            if "duplicate" in error_str or "exists" in error_str or "conflict" in error_str:
+                try:
+                    update_clauses = []
+                    if self.graph.directed or not directed:
+                        update_clauses.append(f'"{src}" -> "{dst}"@0 : {weight}')
+                    else:
+                        update_clauses.append(f'"{src}" -> "{dst}"@0 : {weight}')
+                        update_clauses.append(f'"{dst}" -> "{src}"@0 : {weight}')
+
+                    for edge in update_clauses:
+                        src_id, dst_id, w = edge.split(":")[0].strip().split("->")[0].strip('"'), \
+                            edge.split("->")[1].split("@")[0].strip('"'), \
+                            weight
+                        session.execute(f'''
+                            UPDATE EDGE ON connect "{src_id}" -> "{dst_id}"@0 
+                            SET weight = {w};
+                        ''')
+
+                    direction = "→" if directed else "↔"
+                    self.text_result.insert("end", f"Đã cập nhật trọng số cạnh {src} {direction} {dst}\n")
+
+                except Exception as update_e:
+                    self.text_result.insert("end", f"Lỗi cập nhật cạnh: {update_e}\n")
+            else:
+                self.text_result.insert("end", f"Lỗi lưu cạnh {src}->{dst}: {e}\n")
 
     def clear_result(self):
         self.text_result.delete("1.0", "end")

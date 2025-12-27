@@ -105,10 +105,10 @@ space_var = tk.StringVar()
 space_cb = ttk.Combobox(frame_add, textvariable=space_var, state="readonly", width=22)
 space_cb['values'] = ()
 space_cb.grid(row=4, column=2, columnspan=3, padx=5, pady=5)
-btn_load_db = tk.Button(frame_add, text="Mở data", bg="yellow")
-btn_load_db.grid(row=4, column=0, columnspan=1,sticky="w", padx=5, pady=5, ipady=10)
+# btn_load_db = tk.Button(frame_add, text="Mở data", bg="yellow")
+# btn_load_db.grid(row=4, column=0, columnspan=1,sticky="w", padx=5, pady=5, ipady=10)
 btn_save_config = tk.Button(frame_add, text="Lưu config", bg="lightblue")
-btn_save_config.grid(row=4, column=1, columnspan=1, pady=5)
+btn_save_config.grid(row=4, column=1, columnspan=1, pady=5, sticky="w")
 btn_add_vertex = tk.Button(frame_add, text="Thêm đỉnh")
 
 btn_add_vertex.grid(row=5, column=0, columnspan=3, sticky="we", padx=5, pady=5, ipady=10)
@@ -132,7 +132,7 @@ controller = GraphController(
     algo_var=cb_start,
     entry_start=entry_right,
     space_cb=space_cb,
-    btn_load_db=btn_load_db,
+    # btn_load_db=btn_load_db,
     btn_update=btn_update,
     btn_move=btn_move,
     btn_clear=btn_clear,
@@ -146,7 +146,7 @@ controller = GraphController(
 btn_add_edge.config(command=controller.add_edge)
 btn_right.config(command=controller.run_algorithm)
 btn_add_vertex.config(command=controller.enable_add_vertex)
-btn_load_db.config(command=controller.load_from_db)
+# btn_load_db.config(command=controller.load_from_db)
 btn_update.config(command=controller.update_graph)
 btn_move.config(command=controller.enable_move_mode)
 btn_clear.config(command=controller.clear_canvas)
